@@ -10,8 +10,9 @@ GitHubリポジトリからDocker Composeアプリケーションを作成しま
 - 内部ポート: `8000`
 - ヘルスチェックパス: `/readyz`
 
-`bot` は公開ドメインを必要としません。`api` は同じ画像セットを配信できますが、現在の
-Botはコンテナ内の画像を直接添付するため、公開APIとして使わない間はドメイン不要です。
+`bot` は公開ドメインを必要としません。`api` のポート8000へ
+`https://cafe-collection-bot.chill-cafe.site` を割り当てます。サイト向けJSON APIと、
+Botと同じマニフェストに固定したカード画像をこのサービスから配信します。
 
 ## Variables
 
@@ -23,7 +24,14 @@ BOT_ENABLED=false
 DISCORD_TOKEN=...
 LEVEL_BOT_API_BASE_URL=https://...
 LEVEL_BOT_API_TOKEN=...
+EXTERNAL_API_KEY=...
+CORS_ORIGINS=https://chill-cafe.site
 ```
+
+`EXTERNAL_API_KEY` は、chill-cafe-siteのビルドで `VITE_LEVEL_BOT_API_TOKEN` として
+使っている公開用Bearer JWT、およびlevel-botの `EXTERNAL_API_KEY` と同じ値にします。
+これはクローラー避けであり、権限認可の境界ではありません。カード画像は通常の
+`img`要素とOGPから参照できるようBearer JWTを要求しません。
 
 ## Safe first deployment
 

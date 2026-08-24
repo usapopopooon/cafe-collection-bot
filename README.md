@@ -13,7 +13,11 @@ SHA-256マニフェストに固定しています。
 利用ロール管理を同じ操作で利用できます。UI契約は
 [docs/feature-parity.md](docs/feature-parity.md) に固定しています。
 
-状態、取引、公開API、DBテーブルの正本はまだ `level-bot` です。カフェ台帳は各Botが
+状態、取引、公開データ、DBテーブルの正本はまだ `level-bot` です。サイトが参照する
+図鑑・ランキング・個人棚APIとカード画像は
+`https://cafe-collection-bot.chill-cafe.site` から配信します。JSON APIはサイトが
+level-botとの通信に使っている同じ公開用Bearer JWTを要求し、画像URLは公開のままです。
+カフェ台帳は各Botが
 自分に設定されたチャンネルへ独立して投稿します。両方に台帳が設定されていれば、同じ
 確定取引を両方の台帳へ1回ずつ掲載します。抽選とXP交換の操作ID、DB更新は共通のため、
 Discordの再送や2つのBotの併用で同じ取引そのものを二重確定しません。
@@ -43,7 +47,9 @@ uv run python -m cafe_collection
 
 `.env` の `DISCORD_TOKEN` には、新しく作成したDiscord ApplicationのBot Tokenを設定します。
 `LEVEL_BOT_API_BASE_URL` と `LEVEL_BOT_API_TOKEN` はlevel-bot APIのURLと専用キーを
-設定します。初回配置だけ `BOT_ENABLED=false` とし、level-bot APIの準備後に有効化します。
+設定します。`EXTERNAL_API_KEY` はchill-cafe-siteがlevel-botへ送っている公開用Bearer
+JWTと同じ値をAPIコンテナだけに設定します。初回配置だけ `BOT_ENABLED=false` とし、
+level-bot APIの準備後に有効化します。
 
 ## 検証
 

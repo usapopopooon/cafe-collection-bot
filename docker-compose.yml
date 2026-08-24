@@ -9,6 +9,8 @@ services:
       LEVEL_BOT_API_BASE_URL: ${LEVEL_BOT_API_BASE_URL:-http://host.docker.internal:8000}
       LEVEL_BOT_API_TOKEN: ${LEVEL_BOT_API_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      EXTERNAL_API_KEY:
+      CORS_ORIGINS:
     command:
       [
         "sh",
@@ -32,7 +34,10 @@ services:
     init: true
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LEVEL_BOT_API_BASE_URL: ${LEVEL_BOT_API_BASE_URL:-http://host.docker.internal:8000}
       LEVEL_BOT_API_TOKEN:
+      EXTERNAL_API_KEY: ${EXTERNAL_API_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://chill-cafe.site}
     command: ["./scripts/start-api.sh"]
     ports:
       - "8000:8000"

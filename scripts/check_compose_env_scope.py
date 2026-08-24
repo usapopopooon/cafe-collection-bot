@@ -31,6 +31,12 @@ for compose_file in ("docker-compose.yml", "docker-compose.coolify.yml"):
     assert services["api"]["environment"]["LEVEL_BOT_API_TOKEN"] is None, (
         f"LEVEL_BOT_API_TOKEN leaked into api in {compose_file}"
     )
+    assert services["bot"]["environment"]["EXTERNAL_API_KEY"] is None, (
+        f"EXTERNAL_API_KEY leaked into bot in {compose_file}"
+    )
+    assert services["api"]["environment"]["EXTERNAL_API_KEY"] == (
+        "${EXTERNAL_API_KEY:-}"
+    )
     assert services["bot"]["command"][:2] == ["sh", "-c"], (
         f"login shell would discard the image's venv PATH in {compose_file}"
     )
