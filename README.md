@@ -1,26 +1,23 @@
 # cafe-collection-bot
 
-カフェ・コレクションを `level-bot` から段階的に分離するためのDiscord Botです。
+`level-bot` から分離したカフェ・コレクション専用Discord Botです。
 
-現在は独立したBot、画像・ヘルスAPI、CI、Docker Composeを持ち、Coolifyへ
-配置できます。抽選・カード棚・ランキングは認証付き内部APIを通じてlevel-botの
-同じ抽選・XP・コレクション状態を利用します。画像363枚は両リポジトリで同じ
-SHA-256マニフェストに固定しています。
+Discordのカフェ機能、カード画像363枚、サイト向け公開API、ヘルスAPI、CI、
+Docker Composeをこのリポジトリが所有します。抽選・カード棚・ランキングは認証付き
+内部APIを通じて、level-botに残る共通の抽選・XP・コレクション状態を利用します。
 
-公開コマンド、パネルの文言・部品順、応答、投稿先は `level-bot` の既存UIを基準とし、
-独自の公開操作や移行事情を示すDiscord表示は追加しません。抽選、XP・抽選枠、全カード棚、
+公開コマンド、パネルの文言・部品順、応答、投稿先は移行時に固定したUI契約に従い、
+独自の公開操作や構成事情を示すDiscord表示は追加しません。抽選、XP・抽選枠、全カード棚、
 お気に入り、XP・メダル交換、カード保護、棚テーマ、セットメニュー、ランキング、利用統計、
 利用ロール管理を同じ操作で利用できます。UI契約は
 [docs/feature-parity.md](docs/feature-parity.md) に固定しています。
 
-状態、取引、公開データ、DBテーブルの正本はまだ `level-bot` です。サイトが参照する
+状態、取引、公開データ、DBテーブルの正本は `level-bot` に残しています。サイトが参照する
 図鑑・ランキング・個人棚APIとカード画像は
 `https://cafe-collection-bot.chill-cafe.site` から配信します。JSON APIはサイトが
 level-botとの通信に使っている同じ公開用Bearer JWTを要求し、画像URLは公開のままです。
-カフェ台帳は各Botが
-自分に設定されたチャンネルへ独立して投稿します。両方に台帳が設定されていれば、同じ
-確定取引を両方の台帳へ1回ずつ掲載します。抽選とXP交換の操作ID、DB更新は共通のため、
-Discordの再送や2つのBotの併用で同じ取引そのものを二重確定しません。
+カフェ台帳はこのBotに設定されたチャンネルへ投稿します。抽選とXP交換の操作ID、DB更新は
+共通APIで一意に処理し、Discordの再送で同じ取引を二重確定しません。
 
 新Botの公開コマンドは `/cafe-collection` 配下へ統一しています。
 
@@ -60,7 +57,7 @@ uv run mypy src
 uv run pytest -q
 ```
 
-## 段階移行
+## 責務境界
 
-移行の責務境界と安全な切替順序は [docs/migration.md](docs/migration.md) を参照してください。
+分離後の責務境界は [docs/migration.md](docs/migration.md) を参照してください。
 Coolifyへの登録方法は [docs/coolify.md](docs/coolify.md) を参照してください。
