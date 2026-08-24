@@ -31,5 +31,10 @@ jobs:
       - name: Mypy
         run: mypy src
 
+      - name: Validate Compose files
+        run: |
+          docker compose config >/dev/null
+          docker compose -f docker-compose.coolify.yml config >/dev/null
+
       - name: Pytest
         run: pytest -q

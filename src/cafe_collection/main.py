@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 
 from cafe_collection.bot import create_bot
-from cafe_collection.config import Settings
+from cafe_collection.config import BotSettings
 
 
 def main() -> None:
-    settings = Settings()  # type: ignore[call-arg]
+    settings = BotSettings()  # type: ignore[call-arg]
     logging.basicConfig(
         level=settings.log_level.upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",

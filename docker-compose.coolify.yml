@@ -3,11 +3,14 @@ services:
     build: .
     restart: unless-stopped
     init: true
+    stop_grace_period: 30s
+    mem_limit: ${BOT_MEMORY_LIMIT:-256m}
+    cpus: "${BOT_CPUS:-0.75}"
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://cafe:cafe@postgres:5432/cafe_collection
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cafe}:${SERVICE_PASSWORD_POSTGRES:-cafe-postgres-password}@postgres:5432/${POSTGRES_DB:-cafe_collection}
       BOT_ENABLED: ${BOT_ENABLED:-false}
       DISCORD_TOKEN: ${DISCORD_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -22,15 +25,18 @@ services:
     build: .
     restart: unless-stopped
     init: true
+    stop_grace_period: 30s
+    mem_limit: ${API_MEMORY_LIMIT:-192m}
+    cpus: "${API_CPUS:-0.50}"
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://cafe:cafe@postgres:5432/cafe_collection
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cafe}:${SERVICE_PASSWORD_POSTGRES:-cafe-postgres-password}@postgres:5432/${POSTGRES_DB:-cafe_collection}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     command: ["./scripts/start-api.sh"]
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     healthcheck:
       test:
         [
@@ -47,14 +53,20 @@ services:
   postgres:
     image: postgres:18-alpine
     restart: unless-stopped
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-192m}
+    cpus: "${POSTGRES_CPUS:-0.50}"
     environment:
-      POSTGRES_DB: cafe_collection
-      POSTGRES_USER: cafe
-      POSTGRES_PASSWORD: cafe
+      POSTGRES_DB: ${POSTGRES_DB:-cafe_collection}
+      POSTGRES_USER: ${POSTGRES_USER:-cafe}
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES:-cafe-postgres-password}
     volumes:
       - postgres18-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cafe -d cafe_collection"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\"",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
