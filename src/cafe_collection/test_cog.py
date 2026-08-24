@@ -139,6 +139,53 @@ def _drawn_result() -> CafeDrawBatch:
     )
 
 
+async def test_ready_repairs_the_configured_ranking_panel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ranking_channel = Mock(spec=discord.TextChannel)
+    ranking_channel.id = 3003
+    guild = Mock(spec=discord.Guild)
+    guild.id = 1001
+    guild.get_channel.return_value = ranking_channel
+    bot_user = SimpleNamespace(id=99)
+    bot = cast(commands.Bot, SimpleNamespace(user=bot_user, guilds=[guild]))
+    api = Mock(spec=CafeApiClient)
+    api.layout = AsyncMock(
+        return_value=SimpleNamespace(ranking_channel_id=str(ranking_channel.id))
+    )
+    cog = CafeCog(bot, cast(CafeApiClient, api))
+    ensure_setup = AsyncMock(return_value=None)
+    upsert_ranking = AsyncMock()
+    publish_pending = AsyncMock()
+    monkeypatch.setattr(cog, "_ensure_setup", ensure_setup)
+    monkeypatch.setattr(cog, "_upsert_ranking", upsert_ranking)
+    monkeypatch.setattr(
+        "cafe_collection.cog.publish_pending_for_guild",
+        publish_pending,
+    )
+
+    await cog.on_ready()
+
+    actor = CafeActor(
+        guild_id="1001",
+        user_id="99",
+        role_ids=[],
+        can_manage_guild=True,
+    )
+    ensure_setup.assert_awaited_once_with(
+        actor=actor,
+        guild=guild,
+        require_existing=True,
+    )
+    api.layout.assert_awaited_once_with(actor)
+    upsert_ranking.assert_awaited_once_with(
+        actor=actor,
+        guild=guild,
+        channel=ranking_channel,
+    )
+    publish_pending.assert_awaited_once_with(bot, api, guild)
+
+
 async def test_draw_result_only_points_to_ledger_without_showing_the_card() -> None:
     interaction = _interaction(interaction_id=5000)
     result = CafeDrawBatch(

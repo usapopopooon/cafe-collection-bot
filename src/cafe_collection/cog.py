@@ -842,6 +842,18 @@ class CafeCog(commands.Cog):
                     guild=guild,
                     require_existing=True,
                 )
+                layout = await self.api.layout(actor)
+                ranking_channel = (
+                    guild.get_channel(int(layout.ranking_channel_id))
+                    if layout.ranking_channel_id is not None
+                    else None
+                )
+                if isinstance(ranking_channel, discord.TextChannel):
+                    await self._upsert_ranking(
+                        actor=actor,
+                        guild=guild,
+                        channel=ranking_channel,
+                    )
                 await publish_pending_for_guild(self.bot, self.api, guild)
             except (CafeApiError, discord.HTTPException, OSError):
                 logger.exception("Failed to repair Cafe setup for guild %s", guild.id)
