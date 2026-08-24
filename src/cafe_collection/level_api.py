@@ -37,6 +37,10 @@ class CafeCapabilities(BaseModel):
     hourly_draw_limit: int
     minimum_draw_reward_xp: int
     maximum_draw_reward_xp: int
+    draw_reward_xp_by_rarity: dict[str, int]
+    exchange_xp_by_rarity: dict[str, int]
+    ranking_category_totals: dict[str, int]
+    set_count: int
 
 
 class CafeWallet(BaseModel):
@@ -155,6 +159,7 @@ class CafeRedemption(BaseModel):
     status: Literal["redeemed", "unavailable"]
     reward_xp: int
     reward_medals: int
+    medal_balance: int | None = None
     items: list[CafeRedemptionItem]
 
 
@@ -224,15 +229,32 @@ class CafeRankingEntry(BaseModel):
     user_id: str
     collection_count: int
     mastery_score: int
+    familiar_cards: int
+    regular_cards: int
     signature_cards: int
     completed_sets: int
     rare_collection_count: int
+    rare_r_count: int
+    rare_sr_count: int
+    rare_ssr_count: int
+    rare_ur_count: int
+    rare_mythic_count: int
     treasure_collection_count: int
+    n_collection_count: int
     n_mastery_score: int
+    n_signature_cards: int
+    coffee_collection_count: int
     coffee_mastery_score: int
+    coffee_signature_cards: int
+    tea_collection_count: int
     tea_mastery_score: int
+    tea_signature_cards: int
+    sweets_collection_count: int
     sweets_mastery_score: int
+    sweets_signature_cards: int
+    culture_collection_count: int
     culture_mastery_score: int
+    culture_signature_cards: int
 
 
 class CafeRankingCategory(BaseModel):
@@ -245,6 +267,8 @@ class CafeRankings(BaseModel):
     participant_count: int
     total_draws: int
     captured_at: datetime
+    category_totals: dict[str, int]
+    set_count: int
     categories: list[CafeRankingCategory]
 
 
@@ -272,7 +296,23 @@ class CafeApiClient:
         except httpx.HTTPError as exc:
             raise CafeApiError("level-bot APIへ接続できません") from exc
         if response.status_code == 403:
-            raise CafeAccessDenied("この機能を利用できるロールがありません")
+            role_ids: list[str] = []
+            try:
+                detail = response.json().get("detail", {})
+                if isinstance(detail, dict) and isinstance(
+                    detail.get("role_ids"), list
+                ):
+                    role_ids = [str(value) for value in detail["role_ids"]]
+            except ValueError:
+                pass
+            visible = role_ids[:20]
+            roles = "、".join(f"<@&{role_id}>" for role_id in visible)
+            if len(role_ids) > len(visible):
+                roles += f"、ほか {len(role_ids) - len(visible)}件"
+            message = "この機能を利用できるロールがありません。"
+            if roles:
+                message += f"\n利用可能なロール: {roles}"
+            raise CafeAccessDenied(message)
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -296,6 +336,13 @@ class CafeApiClient:
             "GET", "/api/v1/integrations/cafe-collection/capabilities"
         )
         return self._validate(CafeCapabilities, data)
+
+    async def authorize(self, actor: CafeActor) -> None:
+        await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/authorize",
+            json={"actor": actor.model_dump()},
+        )
 
     async def availability(self, actor: CafeActor, *, count: int) -> CafeAvailability:
         data = await self._request(
@@ -331,6 +378,14 @@ class CafeApiClient:
         data = await self._request(
             "POST",
             "/api/v1/integrations/cafe-collection/collection",
+            json={"actor": actor.model_dump()},
+        )
+        return self._validate(CafeCollection, data)
+
+    async def collection_preview(self, actor: CafeActor) -> CafeCollection:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/collection-preview",
             json={"actor": actor.model_dump()},
         )
         return self._validate(CafeCollection, data)

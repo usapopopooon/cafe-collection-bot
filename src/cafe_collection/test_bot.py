@@ -34,14 +34,34 @@ async def test_bot_readiness_tracks_discord_connection(
         return httpx.Response(
             200,
             json={
-                "api_version": 3,
+                "api_version": 4,
                 "catalog_size": 361,
                 "asset_count": 363,
                 "asset_manifest_sha256": manifest_sha256(),
                 "paid_draw_cost_xp": 20,
                 "hourly_draw_limit": 10,
-                "minimum_draw_reward_xp": 10,
+                "minimum_draw_reward_xp": 25,
                 "maximum_draw_reward_xp": 5000,
+                "draw_reward_xp_by_rarity": {
+                    "C": 25,
+                    "UC": 30,
+                    "R": 60,
+                    "SR": 150,
+                    "SSR": 500,
+                    "UR": 1500,
+                    "MYTHIC": 5000,
+                },
+                "exchange_xp_by_rarity": {
+                    "C": 5,
+                    "UC": 10,
+                    "R": 20,
+                    "SR": 50,
+                    "SSR": 150,
+                    "UR": 500,
+                    "MYTHIC": 1500,
+                },
+                "ranking_category_totals": {},
+                "set_count": 50,
             },
         )
 
@@ -84,14 +104,34 @@ async def test_setup_installs_commands_only_for_matching_api_and_assets(
         return httpx.Response(
             200,
             json={
-                "api_version": 3,
+                "api_version": 4,
                 "catalog_size": 361,
                 "asset_count": 363,
                 "asset_manifest_sha256": manifest_sha256(),
                 "paid_draw_cost_xp": 20,
                 "hourly_draw_limit": 10,
-                "minimum_draw_reward_xp": 10,
+                "minimum_draw_reward_xp": 25,
                 "maximum_draw_reward_xp": 5000,
+                "draw_reward_xp_by_rarity": {
+                    "C": 25,
+                    "UC": 30,
+                    "R": 60,
+                    "SR": 150,
+                    "SSR": 500,
+                    "UR": 1500,
+                    "MYTHIC": 5000,
+                },
+                "exchange_xp_by_rarity": {
+                    "C": 5,
+                    "UC": 10,
+                    "R": 20,
+                    "SR": 50,
+                    "SSR": 150,
+                    "UR": 500,
+                    "MYTHIC": 1500,
+                },
+                "ranking_category_totals": {},
+                "set_count": 50,
             },
         )
 

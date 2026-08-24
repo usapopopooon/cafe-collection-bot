@@ -3,23 +3,30 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
-from io import BytesIO
+from datetime import datetime, timedelta
+from time import monotonic
 from typing import Literal
+from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from cafe_collection.assets import ASSET_DIR, card_image_path
-from cafe_collection.collection_image import RARITY_LABELS, render_collection_pages
+from cafe_collection.assets import ASSET_DIR
+from cafe_collection.collection_image import RARITY_LABELS
 from cafe_collection.collection_ui import show_full_collection
 from cafe_collection.discord_context import (
     actor_from_interaction as _actor,
 )
 from cafe_collection.discord_context import (
     api_from_interaction as _api,
+)
+from cafe_collection.discord_context import (
+    ensure_feature_access as _ensure_feature_access,
 )
 from cafe_collection.discord_context import (
     send_api_error as _send_api_error,
@@ -33,7 +40,7 @@ from cafe_collection.level_api import (
     CafeCapabilities,
     CafeCollectionCard,
     CafeDrawBatch,
-    CafeLayout,
+    CafeRankings,
 )
 from cafe_collection.presentation import (
     CAFE_COLLECTION_SITE_URL,
@@ -43,98 +50,142 @@ from cafe_collection.presentation import (
     PANEL_TITLE,
     RANKING_TITLE,
     build_analytics_embed,
-    build_ledger_embed,
     build_panel_embed,
     build_ranking_detail_embed,
     build_ranking_panel_embed,
 )
 
-RARITY_CHOICES = [
-    app_commands.Choice(name="N", value="C"),
-    app_commands.Choice(name="HN", value="UC"),
-    app_commands.Choice(name="R", value="R"),
-    app_commands.Choice(name="SR", value="SR"),
-    app_commands.Choice(name="SSR", value="SSR"),
-    app_commands.Choice(name="UR", value="UR"),
-    app_commands.Choice(name="幻", value="MYTHIC"),
-]
-
-Placement = Literal["panel", "ledger", "ranking"]
 logger = logging.getLogger(__name__)
+COUNTER_NAME = "☕️カフェカウンター"
+LEDGER_NAME = "📒カフェ台帳"
+_setup_locks: dict[int, asyncio.Lock] = {}
+_ranking_cache: dict[int, tuple[CafeRankings, float]] = {}
+_ranking_locks: dict[int, asyncio.Lock] = {}
+RANKING_CACHE_SECONDS = 5 * 60.0
+
+
+async def _get_cached_rankings(
+    api: CafeApiClient,
+    actor: CafeActor,
+) -> tuple[CafeRankings, bool]:
+    guild_id = int(actor.guild_id)
+    now = monotonic()
+    cached = _ranking_cache.get(guild_id)
+    if cached is not None and now - cached[1] < RANKING_CACHE_SECONDS:
+        return cached[0], False
+    lock = _ranking_locks.setdefault(guild_id, asyncio.Lock())
+    async with lock:
+        cached = _ranking_cache.get(guild_id)
+        if cached is not None and now - cached[1] < RANKING_CACHE_SECONDS:
+            return cached[0], False
+        rankings = await api.rankings(actor)
+        _ranking_cache[guild_id] = (rankings, now)
+        return rankings, True
 
 
 async def _publish_configured_ledger(
-    interaction: discord.Interaction, api: CafeApiClient
-) -> None:
+    interaction: discord.Interaction,
+    api: CafeApiClient,
+    *,
+    record_type: Literal["draw", "redemption"],
+    event_id: str,
+) -> bool:
     if interaction.guild is None or not isinstance(interaction.client, commands.Bot):
-        return
+        return False
     try:
-        await publish_pending_for_guild(interaction.client, api, interaction.guild)
+        delivered = await publish_pending_for_guild(
+            interaction.client, api, interaction.guild
+        )
     except CafeApiError:
         logger.exception(
             "Failed to publish Cafe ledger for guild %s", interaction.guild.id
         )
+        return False
+    return (record_type, event_id) in delivered
+
+
+def _next_hour_label(now: datetime | None = None) -> str:
+    tokyo = ZoneInfo("Asia/Tokyo")
+    local_now = now or datetime.now(tokyo)
+    next_hour = local_now.astimezone(tokyo).replace(
+        minute=0, second=0, microsecond=0
+    ) + timedelta(hours=1)
+    return next_hour.strftime("%H:%M")
+
+
+def _normalized_card_search(value: str) -> str:
+    return " ".join(value.casefold().split())
 
 
 async def _send_draw_result(
     interaction: discord.Interaction,
     result: CafeDrawBatch,
+    *,
+    count: int,
+    ledger_published: bool = False,
 ) -> None:
     if result.status != "drawn":
-        messages = {
-            "confirmation_required": (
-                "無料枠または消費XPが変わりました。もう一度お試しください。"
-            ),
-            "insufficient_xp": "XPが足りません。",
-            "hourly_limit": "1時間の抽選上限に達しています。",
-            "conflict": "操作IDが別の抽選で使用済みです。もう一度お試しください。",
-        }
-        await interaction.followup.send(messages[result.status], ephemeral=True)
-        return
-    files: list[discord.File] = []
-    embeds: list[discord.Embed] = []
-    try:
-        for draw in result.draws:
-            image_path = card_image_path(draw.reward_key)
-            if image_path is None or image_path.name != draw.image_filename:
-                await interaction.followup.send(
-                    "画像バージョンが抽選結果と一致しません。管理者に連絡してください。",
-                    ephemeral=True,
+        if result.status == "confirmation_required":
+            message = "無料枠または消費XPが変わったため確定しませんでした。" + (
+                "もう一度ボタンを押して内容を確認してください。"
+                if count == 1
+                else "もう一度まとめ引きの内容を確認してください。"
+            )
+        elif result.status == "insufficient_xp":
+            message = (
+                "XPが足りません。現在 "
+                f"**{result.wallet_before.available_xp:,} XP** です。"
+            )
+        elif result.status == "hourly_limit":
+            message = (
+                f"1時間の上限 **10回** に達しました。"
+                f"次は **{_next_hour_label()}** から引けます。"
+                if count == 1
+                else (
+                    f"{count}枚のまとめ引きには、この時間の抽選枠が{count}回分必要です。"
+                    f"次は **{_next_hour_label()}** から引けます。"
                 )
-                return
-            filename = f"{draw.batch_position:02d}-{draw.image_filename}"
-            files.append(discord.File(image_path, filename=filename))
-            embed = discord.Embed(
-                title=(
-                    f"☕ {RARITY_LABELS.get(draw.rarity, draw.rarity)}｜"
-                    f"{draw.reward_name}"
-                ),
-                description=draw.reward_description,
-                color=discord.Color.from_rgb(139, 90, 60),
             )
-            embed.add_field(
-                name="結果",
-                value=(
-                    f"{'NEW' if not draw.was_duplicate else '重複'} / "
-                    f"所持 {draw.owned_count}枚 / +{draw.reward_xp:,} XP"
-                ),
-                inline=False,
-            )
-            embed.set_image(url=f"attachment://{filename}")
-            embeds.append(embed)
+        else:
+            message = "操作IDが別の抽選で使用済みです。もう一度ボタンを押してください。"
+        await interaction.followup.send(message, ephemeral=True)
+        return
+    if len(result.draws) != count:
         await interaction.followup.send(
-            content=(
-                f"現在XP: **{result.wallet_after.available_xp:,} XP**\n"
-                "結果は指定されたカフェ台帳にも順次反映されます。"
+            (
+                "抽選結果を取得できませんでした。"
+                if count == 1
+                else "まとめ引きの抽選結果を取得できませんでした。"
             ),
-            embeds=embeds,
-            files=files,
             ephemeral=True,
-            allowed_mentions=discord.AllowedMentions.none(),
         )
-    finally:
-        for file in files:
-            file.close()
+        return
+    if not ledger_published:
+        await interaction.followup.send(
+            (
+                "抽選は確定しましたが、カフェ台帳へ投稿できませんでした。"
+                "管理者に連絡してください。"
+                if count == 1
+                else (
+                    "まとめ引きは確定しましたが、カフェ台帳へ投稿できませんでした。"
+                    "管理者に連絡してください。"
+                )
+            ),
+            ephemeral=True,
+        )
+        return
+    await interaction.followup.send(
+        (
+            "抽選が完了しました。**カフェ台帳**で結果を確認してください。\n"
+            if count == 1
+            else (
+                f"{count}枚のまとめ引きが完了しました。"
+                "**カフェ台帳**で結果を確認してください。\n"
+            )
+        )
+        + f"現在XP: **{result.wallet_after.available_xp:,} XP**",
+        ephemeral=True,
+    )
 
 
 async def _send_balance(
@@ -155,7 +206,6 @@ async def _send_balance(
             "1日合計の上限はありません。"
         ),
         ephemeral=True,
-        allowed_mentions=discord.AllowedMentions.none(),
     )
 
 
@@ -166,7 +216,6 @@ class DrawConfirmView(discord.ui.View):
         api: CafeApiClient,
         actor: CafeActor,
         requester_id: int,
-        event_id: str,
         display_name: str,
         count: int,
         expected_cost_xp: int,
@@ -175,7 +224,7 @@ class DrawConfirmView(discord.ui.View):
         self.api = api
         self.actor = actor
         self.requester_id = requester_id
-        self.event_id = event_id
+        self.event_id = str(uuid4())
         self.display_name = display_name
         self.count = count
         self.expected_cost_xp = expected_cost_xp
@@ -188,7 +237,7 @@ class DrawConfirmView(discord.ui.View):
     ) -> None:
         if interaction.user.id != self.requester_id:
             await interaction.response.send_message(
-                "この確認は抽選を開始した本人専用です。", ephemeral=True
+                "本人だけが操作できます。", ephemeral=True
             )
             return
         current_actor = _actor(interaction)
@@ -198,10 +247,15 @@ class DrawConfirmView(discord.ui.View):
             or current_actor.user_id != self.actor.user_id
         ):
             await interaction.response.send_message(
-                "このサーバーでは確定できません。", ephemeral=True
+                "このサーバーでは利用できません。", ephemeral=True
             )
             return
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        if not await _ensure_feature_access(interaction, self.api, current_actor):
+            return
+        await interaction.response.edit_message(
+            content="抽選しています…",
+            view=None,
+        )
         try:
             result = await self.api.draw(
                 current_actor,
@@ -214,9 +268,36 @@ class DrawConfirmView(discord.ui.View):
             await _send_api_error(interaction, exc)
             return
         self.stop()
-        await _send_draw_result(interaction, result)
+        published = False
         if result.status == "drawn":
-            await _publish_configured_ledger(interaction, self.api)
+            published = await _publish_configured_ledger(
+                interaction,
+                self.api,
+                record_type="draw",
+                event_id=self.event_id,
+            )
+        await _send_draw_result(
+            interaction,
+            result,
+            count=self.count,
+            ledger_published=published,
+        )
+
+    @discord.ui.button(label="キャンセル", style=discord.ButtonStyle.secondary)
+    async def cancel(
+        self,
+        interaction: discord.Interaction,
+        _button: discord.ui.Button[DrawConfirmView],
+    ) -> None:
+        if interaction.user.id != self.requester_id:
+            await interaction.response.send_message(
+                "本人だけが操作できます。", ephemeral=True
+            )
+            return
+        await interaction.response.edit_message(
+            content="抽選をキャンセルしました。", view=None
+        )
+        self.stop()
 
 
 def _draw_confirmation_text(
@@ -257,8 +338,10 @@ async def _draw(
     actor = _actor(interaction)
     if actor is None:
         await interaction.response.send_message(
-            "サーバー内でのみ利用できます。", ephemeral=True
+            "このサーバーでは利用できません。", ephemeral=True
         )
+        return
+    if not await _ensure_feature_access(interaction, api, actor):
         return
     await interaction.response.defer(ephemeral=True, thinking=True)
     try:
@@ -266,6 +349,16 @@ async def _draw(
         capabilities = await api.capabilities() if flexible_maximum else None
     except CafeApiError as exc:
         await _send_api_error(interaction, exc)
+        return
+    if availability.hourly_remaining == 0:
+        hourly_limit = (
+            capabilities.hourly_draw_limit if capabilities is not None else 10
+        )
+        await interaction.followup.send(
+            f"1時間の上限 **{hourly_limit}回** に達しました。"
+            f"次は **{_next_hour_label()}** から引けます。",
+            ephemeral=True,
+        )
         return
     if flexible_maximum and capabilities is not None:
         balance = availability.wallet.available_xp
@@ -293,7 +386,6 @@ async def _draw(
             ephemeral=True,
         )
         return
-    event_id = f"cafe-bot:{interaction.id}"
     expected_cost_xp = (
         max(0, count - (1 if availability.has_free_draw else 0))
         * capabilities.paid_draw_cost_xp
@@ -304,7 +396,7 @@ async def _draw(
         try:
             result = await api.draw(
                 actor,
-                event_id=event_id,
+                event_id=str(interaction.id),
                 display_name=interaction.user.display_name,
                 count=count,
                 expected_cost_xp=0,
@@ -312,9 +404,20 @@ async def _draw(
         except CafeApiError as exc:
             await _send_api_error(interaction, exc)
             return
-        await _send_draw_result(interaction, result)
+        published = False
         if result.status == "drawn":
-            await _publish_configured_ledger(interaction, api)
+            published = await _publish_configured_ledger(
+                interaction,
+                api,
+                record_type="draw",
+                event_id=str(interaction.id),
+            )
+        await _send_draw_result(
+            interaction,
+            result,
+            count=count,
+            ledger_published=published,
+        )
         return
     if capabilities is None:
         try:
@@ -326,7 +429,6 @@ async def _draw(
         api=api,
         actor=actor,
         requester_id=interaction.user.id,
-        event_id=event_id,
         display_name=interaction.user.display_name,
         count=count,
         expected_cost_xp=expected_cost_xp,
@@ -340,63 +442,7 @@ async def _draw(
         ),
         view=view,
         ephemeral=True,
-        allowed_mentions=discord.AllowedMentions.none(),
     )
-
-
-async def _collection(
-    interaction: discord.Interaction,
-    *,
-    api: CafeApiClient,
-    rarity_value: str,
-    rarity_name: str,
-) -> None:
-    actor = _actor(interaction)
-    if actor is None:
-        await interaction.response.send_message(
-            "サーバー内でのみ利用できます。", ephemeral=True
-        )
-        return
-    await interaction.response.defer(ephemeral=True, thinking=True)
-    try:
-        collection = await api.collection(actor)
-    except CafeApiError as exc:
-        await _send_api_error(interaction, exc)
-        return
-    cards = [card for card in collection.cards if card.rarity == rarity_value]
-    try:
-        pages = await asyncio.to_thread(render_collection_pages, cards)
-    except ValueError:
-        await interaction.followup.send(
-            "画像バージョンがコレクションと一致しません。管理者に連絡してください。",
-            ephemeral=True,
-        )
-        return
-    files: list[discord.File] = []
-    embeds: list[discord.Embed] = []
-    try:
-        for page_number, image in enumerate(pages, start=1):
-            filename = f"collection-{rarity_value.lower()}-{page_number}.jpg"
-            files.append(discord.File(BytesIO(image), filename=filename))
-            embed = discord.Embed(
-                title=f"☕ カフェカード棚｜{rarity_name}",
-                description=(
-                    f"収集 {sum(card.count > 0 for card in cards)}/{len(cards)}種"
-                    f"（{page_number}/{len(pages)}ページ）"
-                ),
-                color=discord.Color.from_rgb(139, 90, 60),
-            )
-            embed.set_image(url=f"attachment://{filename}")
-            embeds.append(embed)
-        await interaction.followup.send(
-            embeds=embeds,
-            files=files,
-            ephemeral=True,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-    finally:
-        for file in files:
-            file.close()
 
 
 class CafePanelDrawButton(
@@ -406,7 +452,7 @@ class CafePanelDrawButton(
     def __init__(self, *, count: int, guild_id: int) -> None:
         self.count = count
         self.guild_id = guild_id
-        label = "1枚引く" if count == 1 else "まとめて引く（最大10枚）"
+        label = "一枚引く" if count == 1 else "まとめて引く（最大10枚）"
         emoji = "☕" if count == 1 else "🎟️"
         super().__init__(
             discord.ui.Button(
@@ -434,13 +480,13 @@ class CafePanelDrawButton(
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id != self.guild_id:
             await interaction.response.send_message(
-                "このサーバーのパネルではありません。", ephemeral=True
+                "このサーバーでは利用できません。", ephemeral=True
             )
             return
         api = _api(interaction)
         if api is None:
             await interaction.response.send_message(
-                "カフェのデータサービスが設定されていません。", ephemeral=True
+                "このサーバーでは利用できません。", ephemeral=True
             )
             return
         await _draw(
@@ -449,53 +495,6 @@ class CafePanelDrawButton(
             count=self.count,
             flexible_maximum=self.count == 10,
         )
-
-
-class CafeRaritySelect(discord.ui.Select[discord.ui.View]):
-    def __init__(self, *, requester_id: int, guild_id: int) -> None:
-        self.requester_id = requester_id
-        self.guild_id = guild_id
-        super().__init__(
-            placeholder="表示するレアリティを選択",
-            options=[
-                discord.SelectOption(label=choice.name, value=choice.value)
-                for choice in RARITY_CHOICES
-            ],
-        )
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        if interaction.user.id != self.requester_id:
-            await interaction.response.send_message(
-                "この選択メニューは開いた本人専用です。", ephemeral=True
-            )
-            return
-        if interaction.guild_id != self.guild_id:
-            await interaction.response.send_message(
-                "このサーバーでは表示できません。", ephemeral=True
-            )
-            return
-        api = _api(interaction)
-        if api is None:
-            await interaction.response.send_message(
-                "カフェのデータサービスが設定されていません。", ephemeral=True
-            )
-            return
-        rarity_value = self.values[0]
-        rarity_name = next(
-            choice.name for choice in RARITY_CHOICES if choice.value == rarity_value
-        )
-        await _collection(
-            interaction,
-            api=api,
-            rarity_value=rarity_value,
-            rarity_name=rarity_name,
-        )
-
-
-class CafeRaritySelectView(discord.ui.View):
-    def __init__(self, *, requester_id: int, guild_id: int) -> None:
-        super().__init__(timeout=120)
-        self.add_item(CafeRaritySelect(requester_id=requester_id, guild_id=guild_id))
 
 
 class CafePanelCollectionButton(
@@ -507,7 +506,6 @@ class CafePanelCollectionButton(
         super().__init__(
             discord.ui.Button(
                 label="自分の棚・重複交換",
-                emoji="🗃️",
                 style=discord.ButtonStyle.secondary,
                 custom_id=f"cafe-collection:collection:{guild_id}",
                 row=1,
@@ -526,13 +524,13 @@ class CafePanelCollectionButton(
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id != self.guild_id:
             await interaction.response.send_message(
-                "このサーバーのパネルではありません。", ephemeral=True
+                "このサーバーでは利用できません。", ephemeral=True
             )
             return
         api = _api(interaction)
         if api is None:
             await interaction.response.send_message(
-                "カフェのデータサービスが設定されていません。", ephemeral=True
+                "このサーバーでは利用できません。", ephemeral=True
             )
             return
         await show_full_collection(interaction, api=api)
@@ -565,15 +563,17 @@ class CafePanelBalanceButton(
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id != self.guild_id:
             await interaction.response.send_message(
-                "このサーバーのパネルではありません。", ephemeral=True
+                "このサーバーでは利用できません。", ephemeral=True
             )
             return
         api = _api(interaction)
         actor = _actor(interaction)
         if api is None or actor is None:
             await interaction.response.send_message(
-                "カフェのデータサービスを利用できません。", ephemeral=True
+                "このサーバーでは利用できません。", ephemeral=True
             )
+            return
+        if not await _ensure_feature_access(interaction, api, actor):
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
@@ -598,8 +598,8 @@ class CafePanelView(discord.ui.View):
         self.add_item(CafePanelBalanceButton(guild_id=guild_id))
         self.add_item(
             discord.ui.Button(
-                label="カフェ図鑑",
-                emoji="🌐",
+                label="Web図鑑・排出率",
+                emoji="📖",
                 url=CAFE_COLLECTION_SITE_URL,
                 row=1,
             )
@@ -620,9 +620,13 @@ class CafeRankingButton(
         presentation = CATEGORY_PRESENTATIONS[category]
         super().__init__(
             discord.ui.Button(
-                label=presentation.label,
+                label=presentation.button_label,
                 emoji=presentation.emoji,
-                style=discord.ButtonStyle.secondary,
+                style=(
+                    discord.ButtonStyle.primary
+                    if category == "collection"
+                    else discord.ButtonStyle.secondary
+                ),
                 custom_id=f"cafe-collection:ranking:{category}:{guild_id}",
                 row=row,
             )
@@ -644,23 +648,25 @@ class CafeRankingButton(
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id != self.guild_id:
             await interaction.response.send_message(
-                "このサーバーのランキングではありません。", ephemeral=True
+                "このサーバーでは利用できません。", ephemeral=True
             )
             return
         actor = _actor(interaction)
         api = _api(interaction)
         if actor is None or api is None:
             await interaction.response.send_message(
-                "ランキングを取得できません。", ephemeral=True
+                "このサーバーでは利用できません。", ephemeral=True
             )
+            return
+        if not await _ensure_feature_access(interaction, api, actor):
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
-            rankings = await api.rankings(actor)
+            rankings, refreshed = await _get_cached_rankings(api, actor)
         except CafeApiError as exc:
             await _send_api_error(interaction, exc)
             return
-        if interaction.message is not None:
+        if refreshed and interaction.message is not None:
             try:
                 await interaction.message.edit(
                     embed=build_ranking_panel_embed(rankings),
@@ -696,7 +702,7 @@ class CafeRankingView(discord.ui.View):
             )
         self.add_item(
             discord.ui.Button(
-                label="Webランキング",
+                label="全ランキングをWebで見る",
                 emoji="🌐",
                 url=CAFE_RANKINGS_SITE_URL,
                 row=2,
@@ -710,16 +716,6 @@ def register_dynamic_items(bot: commands.Bot) -> None:
         CafePanelCollectionButton,
         CafePanelBalanceButton,
         CafeRankingButton,
-    )
-
-
-def _placement_ids(
-    layout: CafeLayout,
-    placement: Placement,
-) -> tuple[str | None, str | None]:
-    return (
-        getattr(layout, f"{placement}_channel_id"),
-        getattr(layout, f"{placement}_message_id"),
     )
 
 
@@ -739,7 +735,7 @@ async def _find_existing_message(
         else:
             if message.author.id == bot_user_id:
                 return message
-    async for message in channel.history(limit=100):
+    async for message in channel.history(limit=None):
         if (
             message.author.id == bot_user_id
             and message.embeds
@@ -749,200 +745,278 @@ async def _find_existing_message(
     return None
 
 
-def _can_publish(
-    channel: discord.TextChannel,
-    *,
-    require_attachment: bool,
-) -> bool:
-    member = channel.guild.me
-    if member is None:
-        return False
-    permissions = channel.permissions_for(member)
-    return (
-        permissions.view_channel
-        and permissions.send_messages
-        and permissions.embed_links
-        and permissions.read_message_history
-        and (permissions.attach_files or not require_attachment)
+async def _find_or_create_channel(
+    guild: discord.Guild,
+    name: str,
+    configured_id: str | None,
+) -> discord.TextChannel:
+    configured = (
+        guild.get_channel(int(configured_id)) if configured_id is not None else None
     )
+    existing = (
+        configured
+        if isinstance(configured, discord.TextChannel)
+        else discord.utils.get(guild.text_channels, name=name)
+    )
+    me = guild.me
+    overwrites: dict[
+        discord.Role | discord.Member | discord.Object,
+        discord.PermissionOverwrite,
+    ] = {
+        guild.default_role: discord.PermissionOverwrite(
+            view_channel=True,
+            read_message_history=True,
+            send_messages=False,
+        )
+    }
+    if me is not None:
+        overwrites[me] = discord.PermissionOverwrite(
+            view_channel=True,
+            read_message_history=True,
+            send_messages=True,
+            embed_links=True,
+            attach_files=True,
+        )
+    channel = (
+        existing
+        if existing is not None
+        else await guild.create_text_channel(name, overwrites=overwrites)
+    )
+    default_permissions = channel.overwrites_for(guild.default_role)
+    default_permissions.update(
+        view_channel=True,
+        read_message_history=True,
+        send_messages=False,
+    )
+    await channel.set_permissions(guild.default_role, overwrite=default_permissions)
+    if me is not None:
+        bot_permissions = channel.overwrites_for(me)
+        bot_permissions.update(
+            view_channel=True,
+            read_message_history=True,
+            send_messages=True,
+            embed_links=True,
+            attach_files=True,
+        )
+        await channel.set_permissions(me, overwrite=bot_permissions)
+    return channel
 
 
-class CafeCog(
-    commands.GroupCog, group_name="cafe", group_description="カフェ・コレクション"
-):
+class CafeCog(commands.Cog):
+    cafe_group = app_commands.Group(
+        name="cafe-gacha",
+        description="カフェガチャの管理",
+        default_permissions=discord.Permissions(administrator=True),
+    )
     access_role = app_commands.Group(
         name="access-role",
-        description="カフェ・コレクションの利用ロールを管理",
+        description="カフェ・コレクションの利用ロール管理",
+        parent=cafe_group,
+    )
+    cafe_collection_group = app_commands.Group(
+        name="cafe-collection",
+        description="カフェ・コレクションのカード棚を管理",
+        guild_only=True,
     )
 
-    def __init__(self, api: CafeApiClient) -> None:
+    def __init__(self, bot: commands.Bot, api: CafeApiClient) -> None:
+        self.bot = bot
         self.api = api
+        self._ready_repaired = False
 
-    async def _publish(
+    @commands.Cog.listener()
+    async def on_ready(self) -> None:
+        if self._ready_repaired or self.bot.user is None:
+            return
+        self._ready_repaired = True
+        for guild in self.bot.guilds:
+            actor = CafeActor(
+                guild_id=str(guild.id),
+                user_id=str(self.bot.user.id),
+                role_ids=[],
+                can_manage_guild=True,
+            )
+            try:
+                await self._ensure_setup(
+                    actor=actor,
+                    guild=guild,
+                    require_existing=True,
+                )
+                await publish_pending_for_guild(self.bot, self.api, guild)
+            except (CafeApiError, discord.HTTPException, OSError):
+                logger.exception("Failed to repair Cafe setup for guild %s", guild.id)
+
+    async def _delete_legacy_ledger_header(
         self,
-        interaction: discord.Interaction,
         *,
-        channel: discord.TextChannel | None,
-        placement: Placement,
+        channel: discord.TextChannel,
+        message_id: str | None,
     ) -> None:
-        actor = _actor(interaction)
-        target = channel or (
-            interaction.channel
-            if isinstance(interaction.channel, discord.TextChannel)
-            else None
+        if self.bot.user is None:
+            return
+        if message_id is not None:
+            with contextlib.suppress(discord.NotFound, discord.Forbidden):
+                message = await channel.fetch_message(int(message_id))
+                if (
+                    message.author.id == self.bot.user.id
+                    and message.embeds
+                    and message.embeds[0].title == LEDGER_TITLE
+                ):
+                    await message.delete()
+                    return
+        async for message in channel.history(limit=100):
+            if (
+                message.author.id == self.bot.user.id
+                and message.embeds
+                and message.embeds[0].title == LEDGER_TITLE
+            ):
+                await message.delete()
+
+    async def _upsert_panel(
+        self,
+        *,
+        guild: discord.Guild,
+        channel: discord.TextChannel,
+        stored_channel_id: str | None,
+        stored_message_id: str | None,
+    ) -> discord.Message:
+        if self.bot.user is None:
+            raise CafeApiError("Botユーザーを取得できません")
+        message = await _find_existing_message(
+            channel,
+            bot_user_id=self.bot.user.id,
+            stored_channel_id=stored_channel_id,
+            stored_message_id=stored_message_id,
+            title=PANEL_TITLE,
         )
-        if actor is None or interaction.guild is None or target is None:
-            await interaction.response.send_message(
-                "サーバーのテキストチャンネルで実行してください。", ephemeral=True
-            )
-            return
-        if not actor.can_manage_guild:
-            await interaction.response.send_message(
-                "サーバー管理権限が必要です。", ephemeral=True
-            )
-            return
-        if target.guild.id != interaction.guild.id:
-            await interaction.response.send_message(
-                "このサーバーのチャンネルを指定してください。", ephemeral=True
-            )
-            return
-        require_attachment = placement == "panel"
-        if not _can_publish(target, require_attachment=require_attachment):
-            await interaction.response.send_message(
-                "指定先でメッセージ・埋め込み・履歴を扱う権限が足りません。",
-                ephemeral=True,
-            )
-            return
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        panel_file = discord.File(
+            ASSET_DIR / "panel-cabinet.jpg",
+            filename="panel-cabinet.jpg",
+        )
         try:
-            layout = await self.api.layout(actor)
-            if placement == "panel":
-                embed = build_panel_embed(await self.api.capabilities())
-                view: discord.ui.View = CafePanelView(guild_id=interaction.guild.id)
-                title = PANEL_TITLE
-            elif placement == "ledger":
-                embed = build_ledger_embed()
-                view = discord.ui.View(timeout=None)
-                title = LEDGER_TITLE
-            else:
-                embed = build_ranking_panel_embed(await self.api.rankings(actor))
-                view = CafeRankingView(guild_id=interaction.guild.id)
-                title = RANKING_TITLE
-            stored_channel_id, stored_message_id = _placement_ids(layout, placement)
-            bot_user = interaction.client.user
-            if bot_user is None:
-                raise CafeApiError("Botユーザーを取得できません")
-            message = await _find_existing_message(
-                target,
-                bot_user_id=bot_user.id,
-                stored_channel_id=stored_channel_id,
-                stored_message_id=stored_message_id,
-                title=title,
+            if message is None:
+                return await channel.send(
+                    embed=build_panel_embed(await self.api.capabilities()),
+                    file=panel_file,
+                    view=CafePanelView(guild_id=guild.id),
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+            return await message.edit(
+                content=None,
+                embed=build_panel_embed(await self.api.capabilities()),
+                attachments=[panel_file],
+                suppress=False,
+                view=CafePanelView(guild_id=guild.id),
+                allowed_mentions=discord.AllowedMentions.none(),
             )
-            if placement == "panel":
-                panel_file = discord.File(
-                    ASSET_DIR / "panel-cabinet.jpg",
-                    filename="panel-cabinet.jpg",
+        finally:
+            panel_file.close()
+
+    async def _ensure_setup(
+        self,
+        *,
+        actor: CafeActor,
+        guild: discord.Guild,
+        require_existing: bool,
+    ) -> tuple[discord.TextChannel, discord.TextChannel] | None:
+        lock = _setup_locks.setdefault(guild.id, asyncio.Lock())
+        async with lock:
+            layout = await self.api.layout(actor)
+            if layout.panel_channel_id is None and require_existing:
+                ledger = (
+                    guild.get_channel(int(layout.ledger_channel_id))
+                    if layout.ledger_channel_id is not None
+                    else None
                 )
-                try:
-                    if message is None:
-                        message = await target.send(
-                            embed=embed,
-                            file=panel_file,
-                            view=view,
-                            allowed_mentions=discord.AllowedMentions.none(),
-                        )
-                    else:
-                        message = await message.edit(
-                            embed=embed,
-                            attachments=[panel_file],
-                            view=view,
-                            allowed_mentions=discord.AllowedMentions.none(),
-                        )
-                finally:
-                    panel_file.close()
-            elif message is None:
-                message = await target.send(
-                    embed=embed,
-                    view=view,
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-            else:
-                message = await message.edit(
-                    embed=embed,
-                    view=view,
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
+                if isinstance(ledger, discord.TextChannel):
+                    await self._delete_legacy_ledger_header(
+                        channel=ledger,
+                        message_id=layout.ledger_message_id,
+                    )
+                    await self.api.save_placement(
+                        actor,
+                        placement="ledger",
+                        channel_id=str(ledger.id),
+                        message_id=None,
+                    )
+                return None
+            counter = await _find_or_create_channel(
+                guild,
+                COUNTER_NAME,
+                layout.panel_channel_id,
+            )
+            ledger = await _find_or_create_channel(
+                guild,
+                LEDGER_NAME,
+                layout.ledger_channel_id,
+            )
+            await self._delete_legacy_ledger_header(
+                channel=ledger,
+                message_id=layout.ledger_message_id,
+            )
+            panel = await self._upsert_panel(
+                guild=guild,
+                channel=counter,
+                stored_channel_id=layout.panel_channel_id,
+                stored_message_id=layout.panel_message_id,
+            )
             await self.api.save_placement(
                 actor,
-                placement=placement,
-                channel_id=str(target.id),
-                message_id=str(message.id),
+                placement="panel",
+                channel_id=str(counter.id),
+                message_id=str(panel.id),
             )
-        except CafeApiError as exc:
-            await _send_api_error(interaction, exc)
-            return
-        except discord.HTTPException:
-            await interaction.followup.send(
-                "Discordへの投稿または更新に失敗しました。権限を確認してください。",
-                ephemeral=True,
+            await self.api.save_placement(
+                actor,
+                placement="ledger",
+                channel_id=str(ledger.id),
+                message_id=None,
             )
-            return
-        labels = {"panel": "パネル", "ledger": "台帳", "ranking": "ランキング"}
-        await interaction.followup.send(
-            f"{target.mention} に{labels[placement]}を設定しました。",
-            ephemeral=True,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
+            return counter, ledger
 
-    @app_commands.command(name="draw", description="カフェカードを1〜10枚引きます")
-    @app_commands.describe(count="引く枚数（1〜10枚）")
-    async def draw(
+    async def _upsert_ranking(
         self,
-        interaction: discord.Interaction,
-        count: app_commands.Range[int, 1, 10] = 1,
-    ) -> None:
-        await _draw(interaction, api=self.api, count=count)
-
-    @app_commands.command(
-        name="collection", description="レアリティ別のカード棚を表示します"
-    )
-    @app_commands.choices(rarity=RARITY_CHOICES)
-    async def collection(
-        self,
-        interaction: discord.Interaction,
-        rarity: app_commands.Choice[str] | None = None,
-    ) -> None:
-        if rarity is None:
-            await show_full_collection(interaction, api=self.api)
-            return
-        await _collection(
-            interaction,
-            api=self.api,
-            rarity_value=rarity.value,
-            rarity_name=rarity.name,
+        *,
+        actor: CafeActor,
+        guild: discord.Guild,
+        channel: discord.TextChannel,
+    ) -> discord.Message | None:
+        layout = await self.api.layout(actor)
+        if layout.panel_channel_id is None:
+            return None
+        if self.bot.user is None:
+            raise CafeApiError("Botユーザーを取得できません")
+        message = await _find_existing_message(
+            channel,
+            bot_user_id=self.bot.user.id,
+            stored_channel_id=layout.ranking_channel_id,
+            stored_message_id=layout.ranking_message_id,
+            title=RANKING_TITLE,
         )
-
-    @app_commands.command(name="balance", description="自分のXPと抽選の残り枠を表示")
-    async def balance(self, interaction: discord.Interaction) -> None:
-        actor = _actor(interaction)
-        if actor is None:
-            await interaction.response.send_message(
-                "サーバー内でのみ利用できます。", ephemeral=True
+        rankings, _ = await _get_cached_rankings(self.api, actor)
+        embed = build_ranking_panel_embed(rankings)
+        view = CafeRankingView(guild_id=guild.id)
+        if message is None:
+            message = await channel.send(
+                embed=embed,
+                view=view,
+                allowed_mentions=discord.AllowedMentions.none(),
             )
-            return
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        try:
-            availability = await self.api.availability(actor, count=1)
-            capabilities = await self.api.capabilities()
-        except CafeApiError as exc:
-            await _send_api_error(interaction, exc)
-            return
-        await _send_balance(
-            interaction,
-            availability=availability,
-            hourly_limit=capabilities.hourly_draw_limit,
+        else:
+            message = await message.edit(
+                content=None,
+                embed=embed,
+                view=view,
+                suppress=False,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        await self.api.save_placement(
+            actor,
+            placement="ranking",
+            channel_id=str(channel.id),
+            message_id=str(message.id),
         )
+        return message
 
     async def protection_autocomplete(
         self,
@@ -953,16 +1027,19 @@ class CafeCog(
         if actor is None:
             return []
         try:
-            collection = await self.api.collection(actor)
+            collection = await self.api.collection_preview(actor)
         except CafeApiError:
             return []
-        query = current.casefold().replace(" ", "").replace("　", "")
+        query = _normalized_card_search(current)
         ranked: list[tuple[int, int, CafeCollectionCard]] = []
         for index, card in enumerate(collection.cards):
             if card.count <= 0:
                 continue
-            name = card.name.casefold().replace(" ", "").replace("　", "")
-            key = card.key.casefold()
+            name = _normalized_card_search(card.name)
+            key = _normalized_card_search(card.key)
+            rarity = _normalized_card_search(
+                RARITY_LABELS.get(card.rarity, card.rarity)
+            )
             if not query:
                 rank = 0 if card.is_protected else 1
             elif query in {name, key}:
@@ -973,7 +1050,7 @@ class CafeCog(
                 rank = 2
             elif key.startswith(query):
                 rank = 3
-            elif query in key:
+            elif query in key or query in rarity:
                 rank = 4
             else:
                 continue
@@ -990,31 +1067,37 @@ class CafeCog(
             for _, _, card in ranked[:25]
         ]
 
-    @app_commands.command(name="protect", description="所持カードの保護／解除を切替")
+    @cafe_collection_group.command(
+        name="protect",
+        description="名前検索で所持カードの保護／解除を切り替える",
+    )
     @app_commands.describe(card="カード名を入力すると所持カードが候補表示されます")
     @app_commands.autocomplete(card=protection_autocomplete)
     async def protect(self, interaction: discord.Interaction, card: str) -> None:
         actor = _actor(interaction)
         if actor is None:
             await interaction.response.send_message(
-                "サーバー内でのみ利用できます。", ephemeral=True
+                "サーバー内で実行してください。", ephemeral=True
             )
+            return
+        if not await _ensure_feature_access(interaction, self.api, actor):
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
             collection = await self.api.collection(actor)
-            selected = next(
-                (
-                    item
-                    for item in collection.cards
-                    if item.count > 0
-                    and (item.key == card or item.name.casefold() == card.casefold())
-                ),
-                None,
-            )
+            normalized = _normalized_card_search(card)
+            matches = [
+                item
+                for item in collection.cards
+                if item.count > 0
+                and (
+                    item.key == card or _normalized_card_search(item.name) == normalized
+                )
+            ]
+            selected = matches[0] if len(matches) == 1 else None
             if selected is None:
                 await interaction.followup.send(
-                    "そのカードは現在所持していません。候補から選び直してください。",
+                    "そのカードは現在所持していません。カード欄の候補から選び直してください。",
                     ephemeral=True,
                 )
                 return
@@ -1042,13 +1125,13 @@ class CafeCog(
             ephemeral=True,
         )
 
-    @app_commands.command(name="stats", description="利用状況とXP収支を管理者表示")
-    @app_commands.default_permissions(administrator=True)
+    @cafe_group.command(name="stats", description="利用状況とXP収支を管理者だけに表示")
+    @app_commands.checks.has_permissions(administrator=True)
     async def stats(self, interaction: discord.Interaction) -> None:
         actor = _actor(interaction)
-        if actor is None or not interaction.permissions.administrator:
+        if actor is None:
             await interaction.response.send_message(
-                "サーバー管理者権限が必要です。", ephemeral=True
+                "サーバー内で実行してください。", ephemeral=True
             )
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
@@ -1075,12 +1158,11 @@ class CafeCog(
         role: discord.Role | None = None,
     ) -> None:
         actor = _actor(interaction)
-        if actor is None or not interaction.permissions.administrator:
+        if actor is None:
             await interaction.response.send_message(
-                "サーバー管理者権限が必要です。", ephemeral=True
+                "サーバー内で実行してください。", ephemeral=True
             )
             return
-        await interaction.response.defer(ephemeral=True, thinking=True)
         try:
             if action == "add" and role is not None:
                 result = await self.api.add_access_role(actor, role_id=str(role.id))
@@ -1092,80 +1174,151 @@ class CafeCog(
             await _send_api_error(interaction, exc)
             return
         if action == "list":
+            visible = result.role_ids[:20]
+            formatted = "、".join(f"<@&{role_id}>" for role_id in visible)
+            if len(result.role_ids) > len(visible):
+                formatted += f"、ほか {len(result.role_ids) - len(visible)}件"
             message = (
-                "カフェ・コレクションの利用ロール: "
-                + " ".join(f"<@&{role_id}>" for role_id in result.role_ids)
+                "カフェ・コレクションの利用ロール: " + formatted
                 if result.role_ids
                 else "利用ロールは未設定です。現在は全員が利用できます。"
             )
         elif action == "add" and role is not None:
             message = (
-                f"利用ロールに {role.mention} を追加しました。"
+                f"カフェ・コレクションの利用ロールに {role.mention} を追加しました。"
                 if result.changed
-                else f"{role.mention} はすでに追加されています。"
+                else f"{role.mention} はすでに利用ロールへ追加されています。"
             )
         elif role is not None:
             message = (
-                f"利用ロールから {role.mention} を削除しました。"
+                f"カフェ・コレクションの利用ロールから {role.mention} を削除しました。"
                 if result.changed
-                else f"{role.mention} は設定されていません。"
+                else f"{role.mention} は利用ロールに設定されていません。"
             )
         else:  # pragma: no cover - command wiring always provides a role
             message = "ロールを指定してください。"
-        await interaction.followup.send(
+        await interaction.response.send_message(
             message,
             ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
     @access_role.command(name="add", description="利用できるロールを追加")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(role="カフェ・コレクションの利用を許可するロール")
+    @app_commands.checks.has_permissions(administrator=True)
     async def access_add(
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
         await self._access_role(interaction, action="add", role=role)
 
     @access_role.command(name="remove", description="利用ロールを削除")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(role="カフェ・コレクションの利用許可から外すロール")
+    @app_commands.checks.has_permissions(administrator=True)
     async def access_remove(
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
         await self._access_role(interaction, action="remove", role=role)
 
     @access_role.command(name="list", description="利用ロールを表示")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
     async def access_list(self, interaction: discord.Interaction) -> None:
         await self._access_role(interaction, action="list")
 
-    @app_commands.command(name="panel", description="このチャンネルに抽選パネルを設置")
-    @app_commands.describe(channel="設置先（省略時は実行したチャンネル）")
-    @app_commands.default_permissions(manage_guild=True)
-    async def panel(
-        self,
-        interaction: discord.Interaction,
-        channel: discord.TextChannel | None = None,
-    ) -> None:
-        await self._publish(interaction, channel=channel, placement="panel")
+    @cafe_group.command(
+        name="setup",
+        description="カウンター・台帳・抽選パネルを作成または修復",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.checks.bot_has_permissions(manage_channels=True)
+    async def setup_gacha(self, interaction: discord.Interaction) -> None:
+        actor = _actor(interaction)
+        if actor is None or interaction.guild is None:
+            await interaction.response.send_message(
+                "サーバー内で実行してください。", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            channels = await self._ensure_setup(
+                actor=actor,
+                guild=interaction.guild,
+                require_existing=False,
+            )
+        except (CafeApiError, discord.HTTPException, OSError):
+            logger.exception("Failed to set up Cafe for guild %s", interaction.guild.id)
+            channels = None
+        if channels is None:
+            await interaction.followup.send(
+                "セットアップできませんでした。", ephemeral=True
+            )
+            return
+        counter, ledger = channels
+        await publish_pending_for_guild(self.bot, self.api, interaction.guild)
+        await interaction.followup.send(
+            f"セットアップしました: {counter.mention} / {ledger.mention}",
+            ephemeral=True,
+        )
 
-    @app_commands.command(name="ledger", description="このチャンネルを台帳に指定")
-    @app_commands.describe(channel="指定先（省略時は実行したチャンネル）")
-    @app_commands.default_permissions(manage_guild=True)
-    async def ledger(
+    @cafe_group.command(
+        name="leaderboard-panel",
+        description="選んだチャンネルへランキングパネルを投稿または更新",
+    )
+    @app_commands.describe(channel="ランキングパネルの投稿先")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def leaderboard_panel(
         self,
         interaction: discord.Interaction,
-        channel: discord.TextChannel | None = None,
+        channel: discord.TextChannel,
     ) -> None:
-        await self._publish(interaction, channel=channel, placement="ledger")
-
-    @app_commands.command(name="ranking", description="ランキングパネルを設置")
-    @app_commands.describe(channel="設置先（省略時は実行したチャンネル）")
-    @app_commands.default_permissions(manage_guild=True)
-    async def ranking(
-        self,
-        interaction: discord.Interaction,
-        channel: discord.TextChannel | None = None,
-    ) -> None:
-        await self._publish(interaction, channel=channel, placement="ranking")
+        guild = interaction.guild
+        actor = _actor(interaction)
+        if guild is None or actor is None or channel.guild.id != guild.id:
+            await interaction.response.send_message(
+                "このサーバーのテキストチャンネルを選んでください。",
+                ephemeral=True,
+            )
+            return
+        me = guild.me
+        if me is None:
+            await interaction.response.send_message(
+                "Botのサーバー情報を取得できませんでした。", ephemeral=True
+            )
+            return
+        permissions = channel.permissions_for(me)
+        if not (
+            permissions.view_channel
+            and permissions.read_message_history
+            and permissions.send_messages
+            and permissions.embed_links
+        ):
+            await interaction.response.send_message(
+                "選んだチャンネルで、閲覧・履歴閲覧・送信・埋め込みの権限が必要です。",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            panel = await self._upsert_ranking(
+                actor=actor,
+                guild=guild,
+                channel=channel,
+            )
+        except (CafeApiError, discord.HTTPException):
+            logger.exception(
+                "Failed to publish Cafe leaderboard for guild %s", guild.id
+            )
+            panel = None
+        if panel is None:
+            await interaction.followup.send(
+                "先に `/cafe-gacha setup` を実行してください。",
+                ephemeral=True,
+            )
+            return
+        await interaction.followup.send(
+            f"ランキングパネルを {channel.mention} に投稿・更新しました。",
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
 
 async def setup(bot: commands.Bot) -> None:
@@ -1173,4 +1326,4 @@ async def setup(bot: commands.Bot) -> None:
     if not isinstance(api, CafeApiClient):
         raise RuntimeError("CafeApiClient is not configured")
     register_dynamic_items(bot)
-    await bot.add_cog(CafeCog(api))
+    await bot.add_cog(CafeCog(bot, api))

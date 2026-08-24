@@ -327,19 +327,20 @@ async def publish_pending_for_guild(
     bot: commands.Bot,
     api: CafeApiClient,
     guild: discord.Guild,
-) -> None:
+) -> set[tuple[LedgerRecordType, str]]:
     """Post every unhandled transaction to this bot's configured ledger."""
     bot_user = bot.user
     if bot_user is None:
-        return
+        return set()
+    delivered: set[tuple[LedgerRecordType, str]] = set()
     lock = _guild_locks.setdefault(guild.id, asyncio.Lock())
     async with lock:
         pending = await api.pending_ledger(guild_id=str(guild.id))
         if pending.ledger_channel_id is None:
-            return
+            return delivered
         channel = await _resolve_ledger_channel(bot, guild, pending.ledger_channel_id)
         if channel is None:
-            return
+            return delivered
         records: list[tuple[datetime, LedgerRecordType, LedgerRecord]] = []
         records.extend(
             (batch.created_at, "draw", batch) for batch in pending.draw_batches
@@ -368,6 +369,7 @@ async def publish_pending_for_guild(
                         event_id=record.event_id,
                         message_id=message_id,
                     )
+                    delivered.add((record_type, record.event_id))
             except (discord.HTTPException, OSError):
                 logger.exception(
                     "Failed to publish Cafe %s %s to guild %s ledger",
@@ -375,3 +377,4 @@ async def publish_pending_for_guild(
                     record.event_id,
                     guild.id,
                 )
+    return delivered

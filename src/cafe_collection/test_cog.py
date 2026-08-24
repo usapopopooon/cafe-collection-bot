@@ -1,4 +1,5 @@
 import json
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
@@ -7,19 +8,22 @@ import discord
 import httpx
 import pytest
 from discord import app_commands
+from discord.ext import commands
 
-from cafe_collection import cog as cog_module
+from cafe_collection import collection_ui as collection_ui_module
 from cafe_collection.cog import (
     CafeCog,
     CafePanelDrawButton,
     CafePanelView,
     DrawConfirmView,
     _draw,
+    _send_draw_result,
 )
 from cafe_collection.collection_ui import (
     CollectionActionsView,
     RedemptionConfirmView,
     _collection_summary,
+    show_full_collection,
 )
 from cafe_collection.discord_context import actor_from_interaction as _actor
 from cafe_collection.level_api import (
@@ -30,6 +34,7 @@ from cafe_collection.level_api import (
     CafeCollection,
     CafeCollectionCard,
     CafeCosmetic,
+    CafeDraw,
     CafeDrawBatch,
     CafeMasterySummary,
     CafeWallet,
@@ -63,6 +68,7 @@ def _interaction(
     response = Mock(spec=discord.InteractionResponse)
     response.defer = AsyncMock()
     response.send_message = AsyncMock()
+    response.edit_message = AsyncMock()
     followup = Mock(spec=discord.Webhook)
     followup.send = AsyncMock()
     interaction = Mock(spec=discord.Interaction)
@@ -88,15 +94,39 @@ def _wallet(available_xp: int = 100) -> CafeWallet:
 
 def _capabilities() -> CafeCapabilities:
     return CafeCapabilities(
-        api_version=3,
+        api_version=4,
         catalog_size=361,
         asset_count=363,
         asset_manifest_sha256="test",
         paid_draw_cost_xp=20,
         hourly_draw_limit=10,
-        minimum_draw_reward_xp=10,
+        minimum_draw_reward_xp=25,
         maximum_draw_reward_xp=5000,
+        draw_reward_xp_by_rarity={
+            "C": 25,
+            "UC": 30,
+            "R": 60,
+            "SR": 150,
+            "SSR": 500,
+            "UR": 1500,
+            "MYTHIC": 5000,
+        },
+        exchange_xp_by_rarity={
+            "C": 5,
+            "UC": 10,
+            "R": 20,
+            "SR": 50,
+            "SSR": 150,
+            "UR": 500,
+            "MYTHIC": 1500,
+        },
+        ranking_category_totals={},
+        set_count=50,
     )
+
+
+def _bot() -> commands.Bot:
+    return cast(commands.Bot, SimpleNamespace(user=None, guilds=[]))
 
 
 def _drawn_result() -> CafeDrawBatch:
@@ -106,6 +136,47 @@ def _drawn_result() -> CafeDrawBatch:
         draws=[],
         wallet_before=wallet,
         wallet_after=wallet,
+    )
+
+
+async def test_draw_result_only_points_to_ledger_without_showing_the_card() -> None:
+    interaction = _interaction(interaction_id=5000)
+    result = CafeDrawBatch(
+        status="drawn",
+        draws=[
+            CafeDraw(
+                event_id="5000:0",
+                batch_position=0,
+                reward_key="spent-tea",
+                reward_name="出がらし",
+                reward_description="説明",
+                rarity="C",
+                image_filename="spent-tea.jpg",
+                draw_type="free",
+                cost_xp=0,
+                reward_xp=25,
+                exchange_xp=5,
+                was_duplicate=False,
+                owned_count=1,
+                collected_count=1,
+            )
+        ],
+        wallet_before=_wallet(100),
+        wallet_after=_wallet(125),
+    )
+
+    await _send_draw_result(
+        interaction,
+        result,
+        count=1,
+        ledger_published=True,
+    )
+
+    send = cast(AsyncMock, interaction.followup.send)
+    send.assert_awaited_once_with(
+        "抽選が完了しました。**カフェ台帳**で結果を確認してください。\n"
+        "現在XP: **125 XP**",
+        ephemeral=True,
     )
 
 
@@ -119,6 +190,7 @@ async def test_free_draw_wires_current_discord_actor_and_request_fields() -> Non
     )
     assert _actor(interaction) == actor
     api = Mock(spec=CafeApiClient)
+    api.authorize = AsyncMock()
     api.availability = AsyncMock(
         return_value=CafeAvailability(
             wallet=_wallet(),
@@ -130,17 +202,14 @@ async def test_free_draw_wires_current_discord_actor_and_request_fields() -> Non
     )
     api.draw = AsyncMock(return_value=_drawn_result())
     api.capabilities = AsyncMock(return_value=_capabilities())
-    cog = CafeCog(cast(CafeApiClient, api))
+    await _draw(interaction, api=cast(CafeApiClient, api), count=1)
 
-    command = cast(Any, CafeCog.draw)
-    await command.callback(cog, interaction, 2)
-
-    api.availability.assert_awaited_once_with(actor, count=2)
+    api.availability.assert_awaited_once_with(actor, count=1)
     api.draw.assert_awaited_once_with(
         actor,
-        event_id="cafe-bot:5001",
+        event_id="5001",
         display_name="カフェ客",
-        count=2,
+        count=1,
         expected_cost_xp=0,
     )
 
@@ -154,6 +223,7 @@ async def test_paid_confirmation_reloads_member_roles_before_drawing() -> None:
         can_manage_guild=False,
     )
     api = Mock(spec=CafeApiClient)
+    api.authorize = AsyncMock()
     api.availability = AsyncMock(
         return_value=CafeAvailability(
             wallet=_wallet(),
@@ -165,10 +235,7 @@ async def test_paid_confirmation_reloads_member_roles_before_drawing() -> None:
     )
     api.draw = AsyncMock(return_value=_drawn_result())
     api.capabilities = AsyncMock(return_value=_capabilities())
-    cog = CafeCog(cast(CafeApiClient, api))
-
-    command = cast(Any, CafeCog.draw)
-    await command.callback(cog, initial_interaction, 1)
+    await _draw(initial_interaction, api=cast(CafeApiClient, api), count=1)
 
     api.availability.assert_awaited_once_with(initial_actor, count=1)
     api.draw.assert_not_awaited()
@@ -180,8 +247,8 @@ async def test_paid_confirmation_reloads_member_roles_before_drawing() -> None:
         "**1枚を引きます**。\n"
         "現在XP: **100 XP**\n"
         "消費: **20 XP**\n"
-        "最低獲得: **10 XP**\n"
-        "抽選後: **90 XP以上**\n"
+        "最低獲得: **25 XP**\n"
+        "抽選後: **105 XP以上**\n"
         "この時間の残り枠: 10 → **9回**"
     )
 
@@ -200,14 +267,14 @@ async def test_paid_confirmation_reloads_member_roles_before_drawing() -> None:
             role_ids=["9002"],
             can_manage_guild=True,
         ),
-        event_id="cafe-bot:5002",
+        event_id=view.event_id,
         display_name="カフェ客",
         count=1,
         expected_cost_xp=20,
     )
 
 
-async def test_collection_wires_actor_and_selected_rarity(
+async def test_full_collection_wires_actor_and_all_rarity_shelves(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     interaction = _interaction(interaction_id=5004)
@@ -240,6 +307,7 @@ async def test_collection_wires_actor_and_selected_rarity(
         is_protected=False,
     )
     api = Mock(spec=CafeApiClient)
+    api.authorize = AsyncMock()
     api.collection = AsyncMock(
         return_value=CafeCollection(
             cards=[selected_card, other_card],
@@ -257,20 +325,13 @@ async def test_collection_wires_actor_and_selected_rarity(
 
     def render(cards: list[CafeCollectionCard]) -> tuple[bytes, ...]:
         rendered_cards.extend(cards)
-        return (b"\xff\xd8\xff\xd9",)
+        return (b"\xff\xd8\xff\xd9",) if cards else ()
 
-    monkeypatch.setattr(cog_module, "render_collection_pages", render)
-    cog = CafeCog(cast(CafeApiClient, api))
-
-    command = cast(Any, CafeCog.collection)
-    await command.callback(
-        cog,
-        interaction,
-        app_commands.Choice(name="N", value="C"),
-    )
+    monkeypatch.setattr(collection_ui_module, "render_collection_pages", render)
+    await show_full_collection(interaction, api=cast(CafeApiClient, api))
 
     api.collection.assert_awaited_once_with(actor)
-    assert rendered_cards == [selected_card]
+    assert rendered_cards == [selected_card, other_card]
 
 
 async def test_panel_draw_uses_distinct_component_id_and_interaction_id() -> None:
@@ -336,7 +397,7 @@ async def test_panel_draw_uses_distinct_component_id_and_interaction_id() -> Non
         for item in CafePanelView(guild_id=1001).children
         if isinstance(item, discord.ui.DynamicItem)
     } == {
-        "1枚引く",
+        "一枚引く",
         "まとめて引く（最大10枚）",
         "自分の棚・重複交換",
         "自分のXP・残り枠",
@@ -344,25 +405,34 @@ async def test_panel_draw_uses_distinct_component_id_and_interaction_id() -> Non
     draw_request = next(
         payload for path, payload in requests if path.endswith("/draws")
     )
-    assert draw_request["event_id"] == "cafe-bot:7001"
+    assert draw_request["event_id"] == "7001"
 
 
 def test_cafe_command_group_exposes_user_and_admin_feature_parity() -> None:
     assert {command.name for command in CafeCog.__cog_app_commands__} == {
-        "draw",
-        "collection",
-        "balance",
-        "protect",
-        "stats",
-        "access-role",
-        "panel",
-        "ledger",
-        "ranking",
+        "cafe-gacha",
+        "cafe-collection",
     }
-    access_role = next(
+    cafe_gacha = next(
         command
         for command in CafeCog.__cog_app_commands__
-        if command.name == "access-role"
+        if command.name == "cafe-gacha"
+    )
+    assert isinstance(cafe_gacha, app_commands.Group)
+    assert {command.name for command in cafe_gacha.commands} == {
+        "setup",
+        "leaderboard-panel",
+        "stats",
+        "access-role",
+    }
+    assert {command.name: command.description for command in cafe_gacha.commands} == {
+        "setup": "カウンター・台帳・抽選パネルを作成または修復",
+        "leaderboard-panel": "選んだチャンネルへランキングパネルを投稿または更新",
+        "stats": "利用状況とXP収支を管理者だけに表示",
+        "access-role": "カフェ・コレクションの利用ロール管理",
+    }
+    access_role = next(
+        command for command in cafe_gacha.commands if command.name == "access-role"
     )
     assert isinstance(access_role, app_commands.Group)
     assert {command.name for command in access_role.commands} == {
@@ -370,104 +440,66 @@ def test_cafe_command_group_exposes_user_and_admin_feature_parity() -> None:
         "remove",
         "list",
     }
-
-
-@pytest.mark.parametrize("placement", ["panel", "ledger", "ranking"])
-async def test_admin_command_saves_exact_channel_and_message_mapping(
-    placement: str,
-) -> None:
-    saved_payloads: list[dict[str, Any]] = []
-    layout: dict[str, str | None] = {
-        "panel_channel_id": None,
-        "panel_message_id": None,
-        "ledger_channel_id": None,
-        "ledger_message_id": None,
-        "ranking_channel_id": None,
-        "ranking_message_id": None,
+    assert {command.name: command.description for command in access_role.commands} == {
+        "add": "利用できるロールを追加",
+        "remove": "利用ロールを削除",
+        "list": "利用ロールを表示",
     }
-    layout[f"{placement}_channel_id"] = "2001"
-    layout[f"{placement}_message_id"] = "3001"
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        if path.endswith("/capabilities"):
-            return httpx.Response(
-                200,
-                json={
-                    "api_version": 3,
-                    "catalog_size": 361,
-                    "asset_count": 363,
-                    "asset_manifest_sha256": "test",
-                    "paid_draw_cost_xp": 20,
-                    "hourly_draw_limit": 10,
-                    "minimum_draw_reward_xp": 10,
-                    "maximum_draw_reward_xp": 5000,
-                },
-            )
-        if path.endswith("/rankings"):
-            return httpx.Response(
-                200,
-                json={
-                    "participant_count": 0,
-                    "total_draws": 0,
-                    "captured_at": "2026-08-24T00:00:00Z",
-                    "categories": [],
-                },
-            )
-        if path.endswith("/placements"):
-            saved_payloads.append(cast(dict[str, Any], json.loads(request.content)))
-            return httpx.Response(200, json=layout)
-        return httpx.Response(200, json=layout)
-
-    api = CafeApiClient(
-        "https://level.example.com",
-        "cafe-secret",
-        transport=httpx.MockTransport(handler),
+    cafe_collection = next(
+        command
+        for command in CafeCog.__cog_app_commands__
+        if command.name == "cafe-collection"
     )
-    guild = Mock(spec=discord.Guild)
-    guild.id = 1001
-    guild.me = Mock(spec=discord.Member)
-    target = Mock(spec=discord.TextChannel)
-    target.id = 2001
-    target.guild = guild
-    target.mention = "<#2001>"
-    permissions = Mock(spec=discord.Permissions)
-    permissions.view_channel = True
-    permissions.send_messages = True
-    permissions.embed_links = True
-    permissions.read_message_history = True
-    permissions.attach_files = True
-    target.permissions_for.return_value = permissions
+    assert isinstance(cafe_collection, app_commands.Group)
+    assert {command.name for command in cafe_collection.commands} == {"protect"}
+    assert cafe_collection.description == "カフェ・コレクションのカード棚を管理"
+    assert cafe_collection.commands[0].description == (
+        "名前検索で所持カードの保護／解除を切り替える"
+    )
+
+
+async def test_legacy_ledger_header_is_deleted_instead_of_reposted() -> None:
     bot_user = SimpleNamespace(id=4001)
-    author = SimpleNamespace(id=bot_user.id)
+    bot = cast(commands.Bot, SimpleNamespace(user=bot_user, guilds=[]))
+    api = Mock(spec=CafeApiClient)
+    cog = CafeCog(bot, cast(CafeApiClient, api))
     message = Mock(spec=discord.Message)
-    message.id = 3001
-    message.author = author
-    message.edit = AsyncMock(return_value=message)
-    target.fetch_message = AsyncMock(return_value=message)
-    target.send = AsyncMock()
-    interaction = _interaction(interaction_id=7002, manage_guild=True)
-    cast(Any, interaction).guild = guild
-    cast(Any, interaction).channel = target
-    cast(Any, interaction).client = SimpleNamespace(user=bot_user, cafe_api=api)
-    cog = CafeCog(api)
+    message.author = bot_user
+    message.embeds = [discord.Embed(title="📒 カフェ台帳")]
+    message.delete = AsyncMock()
+    channel = Mock(spec=discord.TextChannel)
+    channel.fetch_message = AsyncMock(return_value=message)
 
-    command = cast(Any, getattr(CafeCog, placement))
-    try:
-        await command.callback(
-            cog,
-            interaction,
-            None if placement == "ledger" else target,
-        )
-    finally:
-        await api.close()
+    await cog._delete_legacy_ledger_header(
+        channel=cast(discord.TextChannel, channel),
+        message_id="3001",
+    )
 
-    assert len(saved_payloads) == 1
-    assert saved_payloads[0]["placement"] == placement
-    assert saved_payloads[0]["channel_id"] == "2001"
-    assert saved_payloads[0]["message_id"] == "3001"
-    message.edit.assert_awaited_once()
-    target.send.assert_not_awaited()
+    message.delete.assert_awaited_once_with()
+
+
+async def test_legacy_ledger_header_is_found_and_deleted_without_saved_id() -> None:
+    bot_user = SimpleNamespace(id=4001)
+    bot = cast(commands.Bot, SimpleNamespace(user=bot_user, guilds=[]))
+    api = Mock(spec=CafeApiClient)
+    cog = CafeCog(bot, cast(CafeApiClient, api))
+    message = Mock(spec=discord.Message)
+    message.author = bot_user
+    message.embeds = [discord.Embed(title="📒 カフェ台帳")]
+    message.delete = AsyncMock()
+
+    async def history() -> AsyncIterator[discord.Message]:
+        yield message
+
+    channel = Mock(spec=discord.TextChannel)
+    channel.history = Mock(return_value=history())
+
+    await cog._delete_legacy_ledger_header(
+        channel=cast(discord.TextChannel, channel),
+        message_id=None,
+    )
+
+    message.delete.assert_awaited_once_with()
 
 
 async def test_maximum_draw_matches_old_panel_affordable_count() -> None:
@@ -479,6 +511,7 @@ async def test_maximum_draw_matches_old_panel_affordable_count() -> None:
         can_manage_guild=False,
     )
     api = Mock(spec=CafeApiClient)
+    api.authorize = AsyncMock()
     api.availability = AsyncMock(
         return_value=CafeAvailability(
             wallet=_wallet(20),
@@ -503,16 +536,16 @@ async def test_maximum_draw_matches_old_panel_affordable_count() -> None:
     assert send.await_args is not None
     view = send.await_args.kwargs["view"]
     assert isinstance(view, DrawConfirmView)
-    assert view.count == 3
-    assert view.expected_cost_xp == 40
+    assert view.count == 5
+    assert view.expected_cost_xp == 80
     assert view.actor == actor
     assert send.await_args.args[0] == (
-        "**3枚をまとめて引きます**（本日の無料1枚を含む）。\n"
+        "**5枚をまとめて引きます**（本日の無料1枚を含む）。\n"
         "現在XP: **20 XP**\n"
-        "消費: **40 XP**\n"
-        "最低獲得: **30 XP**\n"
-        "抽選後: **10 XP以上**\n"
-        "この時間の残り枠: 5 → **2回**\n"
+        "消費: **80 XP**\n"
+        "最低獲得: **125 XP**\n"
+        "抽選後: **65 XP以上**\n"
+        "この時間の残り枠: 5 → **0回**\n"
         "獲得XPを次の1枚の費用に充てながら引きます。"
     )
 
@@ -565,6 +598,13 @@ def test_collection_summary_matches_old_bot_details_and_pity_conditions() -> Non
     assert pity.value == (
         "NEWなし 99/100回\n上限まで続いた場合、次の抽選は未所持カードになります。"
     )
+    assert [field.name for field in pity_embed.fields] == [
+        "🪙 カフェメダル",
+        "☕ カード熟練度",
+        "🏆 N棚の主",
+        "終盤のNEW保証",
+        "XP交換",
+    ]
 
 
 async def test_collection_actions_include_every_old_collection_operation() -> None:
@@ -612,14 +652,37 @@ async def test_collection_actions_include_every_old_collection_operation() -> No
 
     labels = {getattr(item, "label", None) for item in view.children}
     assert labels == {
-        "お気に入り",
-        "カード保護",
-        "個別XP交換",
-        "全重複をXPへ",
-        "全重複をメダルへ",
+        None,
+        "カード保護（名前検索）",
+        "重複を選んでXP交換",
+        "全重複をXP交換",
+        "全重複をメダル交換",
         "メダル・棚テーマ",
         "セットメニュー",
     }
+    rarity_select = view.children[0]
+    assert isinstance(rarity_select, discord.ui.Select)
+    assert rarity_select.placeholder == "お気に入りするカードのレアリティを選ぶ"
+    buttons = [
+        cast(discord.ui.Button[discord.ui.View], item) for item in view.children[1:]
+    ]
+    assert [button.label for button in buttons] == [
+        "重複を選んでXP交換",
+        "全重複をXP交換",
+        "全重複をメダル交換",
+        "メダル・棚テーマ",
+        "カード保護（名前検索）",
+        "セットメニュー",
+    ]
+    assert [button.style for button in buttons] == [
+        discord.ButtonStyle.primary,
+        discord.ButtonStyle.success,
+        discord.ButtonStyle.secondary,
+        discord.ButtonStyle.secondary,
+        discord.ButtonStyle.secondary,
+        discord.ButtonStyle.secondary,
+    ]
+    assert [button.row for button in buttons] == [1, 1, 2, 2, 3, 3]
 
 
 async def test_xp_exchange_uses_confirmation_interaction_as_idempotency_key() -> None:
@@ -650,6 +713,8 @@ async def test_xp_exchange_uses_confirmation_interaction_as_idempotency_key() ->
         user_id=11,
         quantities={"spent-tea": 1},
         kind="xp",
+        confirm_label="このカードを交換する",
+        unavailable_message="所持数が変わりました。",
     )
     button = cast(discord.ui.Button[discord.ui.View], view.children[0])
     try:
@@ -657,6 +722,33 @@ async def test_xp_exchange_uses_confirmation_interaction_as_idempotency_key() ->
     finally:
         await api.close()
 
-    assert captured["event_id"] == "cafe-bot:redemption:8002"
+    assert captured["event_id"] == view.event_id
     assert captured["quantities"] == {"spent-tea": 1}
     assert captured["actor"]["guild_id"] == "1001"
+
+
+async def test_medal_confirmation_has_no_extra_cancel_button() -> None:
+    xp_view = RedemptionConfirmView(
+        guild_id=1001,
+        user_id=11,
+        quantities={"spent-tea": 1},
+        kind="xp",
+        confirm_label="このカードを交換する",
+        unavailable_message="所持数が変わりました。",
+    )
+    medal_view = RedemptionConfirmView(
+        guild_id=1001,
+        user_id=11,
+        quantities={"spent-tea": 1},
+        kind="medals",
+        confirm_label="メダルへ交換する",
+        unavailable_message="所持数が変わりました。",
+    )
+
+    assert [getattr(child, "label", None) for child in xp_view.children] == [
+        "このカードを交換する",
+        "キャンセル",
+    ]
+    assert [getattr(child, "label", None) for child in medal_view.children] == [
+        "メダルへ交換する"
+    ]

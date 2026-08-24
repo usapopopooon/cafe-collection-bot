@@ -34,7 +34,8 @@ level-botへ同じ `CAFE_COLLECTION_API_TOKEN` を設定し、内部APIを先に
 新Botの全カフェ機能はlevel-botの内部APIを使うため、旧Botのパネルと同じ抽選・XP・
 カード棚・交換・保護・お気に入り・メダル・棚テーマ・ランキング状態を参照します。旧Bot側の
 `CAFE_COLLECTION_BOT_ENABLED=true` は維持でき、両Botを併用できます。デプロイ後は
-管理者が配置先で `/cafe panel`、`/cafe ledger`、`/cafe ranking` を実行します。
+管理者が `/cafe-gacha setup` を実行し、ランキングが必要なチャンネルを
+`/cafe-gacha leaderboard-panel channel` で選びます。
 
 カフェ台帳は各Botが自分に設定されたチャンネルへ投稿します。両方に台帳が設定されて
 いれば、同じ確定取引が両方へ1回ずつ掲載されます。新Botは自分からの取引を直後に投稿し、

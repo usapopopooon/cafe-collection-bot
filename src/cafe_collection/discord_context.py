@@ -40,10 +40,46 @@ async def send_api_error(interaction: discord.Interaction, error: CafeApiError) 
     message = (
         str(error)
         if isinstance(error, CafeAccessDenied)
-        else "カフェのデータサービスへ接続できません。少し待ってからお試しください。"
+        else "処理に失敗しました。時間をおいてもう一度お試しください。"
     )
-    await interaction.followup.send(
-        message,
-        ephemeral=True,
-        allowed_mentions=discord.AllowedMentions.none(),
-    )
+    if interaction.response.is_done():
+        await interaction.followup.send(
+            message,
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+    else:
+        await interaction.response.send_message(
+            message,
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+
+async def ensure_feature_access(
+    interaction: discord.Interaction,
+    api: CafeApiClient,
+    actor: CafeActor,
+) -> bool:
+    try:
+        await api.authorize(actor)
+    except CafeApiError as error:
+        message = (
+            str(error)
+            if isinstance(error, CafeAccessDenied)
+            else "処理に失敗しました。時間をおいてもう一度お試しください。"
+        )
+        if interaction.response.is_done():
+            await interaction.followup.send(
+                message,
+                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        else:
+            await interaction.response.send_message(
+                message,
+                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        return False
+    return True

@@ -6,6 +6,7 @@ import asyncio
 import logging
 from io import BytesIO
 from typing import Literal
+from uuid import uuid4
 
 import discord
 from discord.ext import commands
@@ -14,6 +15,7 @@ from cafe_collection.collection_image import RARITY_LABELS, render_collection_pa
 from cafe_collection.discord_context import (
     actor_from_interaction,
     api_from_interaction,
+    ensure_feature_access,
     send_api_error,
 )
 from cafe_collection.ledger import publish_pending_for_guild
@@ -30,6 +32,7 @@ RARITY_ORDER = ("C", "UC", "R", "SR", "SSR", "UR", "MYTHIC")
 Action = Literal["favorite", "redeem_xp", "protect"]
 RedemptionKind = Literal["xp", "medals"]
 logger = logging.getLogger(__name__)
+DEFAULT_EMBED_COLOR = 0x5865F2
 
 
 def _rarity_label(value: str) -> str:
@@ -81,10 +84,17 @@ class UserView(discord.ui.View):
             return False
         if interaction.guild_id != self.guild_id:
             await interaction.response.send_message(
-                "このサーバーでは操作できません。", ephemeral=True
+                "このサーバーでは利用できません。", ephemeral=True
             )
             return False
-        return True
+        context = _actor_api(interaction)
+        if context is None:
+            await interaction.response.send_message(
+                "このサーバーでは利用できません。", ephemeral=True
+            )
+            return False
+        actor, api = context
+        return await ensure_feature_access(interaction, api, actor)
 
 
 def _collection_summary(
@@ -113,7 +123,7 @@ def _collection_summary(
             if owned
             else "まだカードはありません。"
         ),
-        color=(cosmetic.color if cosmetic is not None else 0x8B5A3C),
+        color=(cosmetic.color if cosmetic is not None else DEFAULT_EMBED_COLOR),
     )
     embed.add_field(
         name="🪙 カフェメダル",
@@ -132,7 +142,6 @@ def _collection_summary(
         embed.add_field(
             name="お気に入りの一枚",
             value=f"{_rarity_label(favorite.rarity)}｜{favorite.name}",
-            inline=False,
         )
     embed.add_field(
         name="☕ カード熟練度",
@@ -161,25 +170,22 @@ def _collection_summary(
         value=f"N収集 {n_owned}/{len(n_cards)}種 · {milestone_detail}",
         inline=False,
     )
-    completed_sets = sum(item.completed for item in collection.sets)
-    embed.add_field(
-        name="🍽️ セットメニュー",
-        value=f"完成 {completed_sets}/{len(collection.sets)}セット",
-        inline=False,
-    )
     exchangeable = sum(card.exchangeable_count for card in collection.cards)
     protected = sum(
         card.redeemable_count for card in collection.cards if card.is_protected
     )
-    embed.add_field(
-        name="XP・メダル交換",
-        value=(
-            f"交換可能 **{exchangeable}枚**"
-            + (f" · 保護中の重複 **{protected}枚**" if protected else "")
-            if exchangeable
-            else "交換できる重複カードはまだありません。"
-        ),
-        inline=False,
+    protected_text = (
+        f" 保護中の重複 **{protected}枚** は交換対象外です。" if protected else ""
+    )
+    exchange_guidance = (
+        f"交換可能なカードが合計 **{exchangeable}枚** あります。"
+        "XPへの個別・全重複交換、またはカフェメダルへの全重複交換を選べます。"
+        "どの交換でも各カードの最初の1枚は必ず残ります。" + protected_text
+        if exchangeable
+        else (
+            "交換できる重複カードはまだありません。"
+            "同じカードの2枚目以降がXP・メダル交換の対象になります。" + protected_text
+        )
     )
     if collection.endgame_pity_active:
         embed.add_field(
@@ -191,10 +197,11 @@ def _collection_summary(
             ),
             inline=False,
         )
+    embed.add_field(name="XP交換", value=exchange_guidance, inline=False)
     embed.set_footer(
         text=(
             f"収集 {owned}/{len(collection.cards)}種 · "
-            "最初の1枚と保護カードは交換後も残ります"
+            "最初の1枚と保護カードは残ります（交換対象は未保護の2枚目以降）"
         )
     )
     return embed
@@ -208,8 +215,10 @@ async def show_full_collection(
     actor = actor_from_interaction(interaction)
     if actor is None:
         await interaction.response.send_message(
-            "サーバー内でのみ利用できます。", ephemeral=True
+            "このサーバーでは利用できません。", ephemeral=True
         )
+        return
+    if not await ensure_feature_access(interaction, api, actor):
         return
     await interaction.response.defer(ephemeral=True, thinking=True)
     try:
@@ -226,12 +235,9 @@ async def show_full_collection(
                 (rarity, page, len(pages), image)
                 for page, image in enumerate(pages, start=1)
             )
-    except ValueError:
-        await interaction.followup.send(
-            "画像バージョンがカード棚と一致しません。管理者に連絡してください。",
-            ephemeral=True,
-        )
-        return
+    except (OSError, ValueError):
+        logger.exception("Failed to render Cafe collection shelf")
+        rendered = []
     embeds: list[discord.Embed] = []
     files: list[discord.File] = []
     summary = _collection_summary(
@@ -239,6 +245,8 @@ async def show_full_collection(
         display_name=interaction.user.display_name,
     )
     try:
+        if not rendered:
+            embeds.append(summary)
         for index, (rarity, page, page_count, image) in enumerate(rendered):
             filename = f"collection-{rarity.lower()}-{page}.jpg"
             files.append(discord.File(BytesIO(image), filename=filename))
@@ -254,9 +262,16 @@ async def show_full_collection(
                     description=(
                         f"所持 {sum(card.count > 0 for card in cards)}/{len(cards)}種"
                     ),
-                    color=0x8B5A3C,
+                    color=DEFAULT_EMBED_COLOR,
                 )
             embed.set_image(url=f"attachment://{filename}")
+            embed.set_footer(
+                text=(
+                    f"収集 {sum(card.count > 0 for card in collection.cards)}/"
+                    f"{len(collection.cards)}種 · 最初の1枚と保護カードは残ります"
+                    "（交換対象は未保護の2枚目以降）"
+                )
+            )
             embeds.append(embed)
         view = CollectionActionsView(
             guild_id=int(actor.guild_id),
@@ -271,14 +286,12 @@ async def show_full_collection(
                     files=files[start : start + 10],
                     view=view,
                     ephemeral=True,
-                    allowed_mentions=discord.AllowedMentions.none(),
                 )
             else:
                 await interaction.followup.send(
                     embeds=embeds[start : start + 10],
                     files=files[start : start + 10],
                     ephemeral=True,
-                    allowed_mentions=discord.AllowedMentions.none(),
                 )
     finally:
         for file in files:
@@ -303,15 +316,32 @@ class ActionButton(discord.ui.Button[discord.ui.View]):
     ) -> None:
         labels = {
             "favorite": ("お気に入り", "⭐"),
-            "redeem_xp": ("個別XP交換", "♻️"),
-            "protect": ("カード保護", "🔒"),
+            "redeem_xp": ("重複を選んでXP交換", "🎴"),
+            "protect": ("カード保護（名前検索）", "🔒"),
         }
         label, emoji = labels[action]
-        super().__init__(label=label, emoji=emoji, row=row)
+        super().__init__(
+            label=label,
+            emoji=emoji,
+            style=(
+                discord.ButtonStyle.primary
+                if action == "redeem_xp"
+                else discord.ButtonStyle.secondary
+            ),
+            row=row,
+        )
         self.action = action
         self.collection = collection
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        if self.action == "protect":
+            await interaction.response.send_message(
+                "`/cafe-collection protect` のカード欄へ名前を入力してください。\n"
+                "入力中に所持カードだけが候補表示され、同じコマンドで保護／解除できます。\n"
+                "保護中のカードはXP・メダル交換から除外されます。",
+                ephemeral=True,
+            )
+            return
         cards = _eligible_cards(self.collection, self.action)
         if not cards:
             await interaction.response.send_message(
@@ -319,7 +349,11 @@ class ActionButton(discord.ui.Button[discord.ui.View]):
             )
             return
         await interaction.response.send_message(
-            "レアリティを選んでください。",
+            (
+                "交換するカードのレアリティを選んでください。"
+                if self.action == "redeem_xp"
+                else "お気に入りにするカードのレアリティを選んでください。"
+            ),
             view=RarityPageView(
                 guild_id=interaction.guild_id or 0,
                 user_id=interaction.user.id,
@@ -352,14 +386,26 @@ class RarityPageSelect(discord.ui.Select[discord.ui.View]):
                 )
                 for page in range(page_count)
             )
-        super().__init__(placeholder="レアリティを選ぶ", options=options)
+        action_label = {
+            "favorite": "お気に入り",
+            "redeem_xp": "交換",
+            "protect": "保護設定",
+        }[action]
+        super().__init__(
+            placeholder=f"{action_label}するカードのレアリティを選ぶ",
+            options=options,
+        )
 
     async def callback(self, interaction: discord.Interaction) -> None:
         rarity, _, page_value = self.values[0].partition(":")
         page = int(page_value)
         cards = [card for card in self.cards if card.rarity == rarity]
         await interaction.response.send_message(
-            "カードを選んでください。",
+            {
+                "favorite": "お気に入りにするカードを選んでください。",
+                "redeem_xp": "交換するカードを1種類選んでください。",
+                "protect": "保護または保護解除するカードを選んでください。",
+            }[self.action],
             view=CardChoiceView(
                 guild_id=interaction.guild_id or 0,
                 user_id=interaction.user.id,
@@ -388,23 +434,36 @@ class CardChoiceSelect(discord.ui.Select[discord.ui.View]):
         self.cards_by_key = {card.key: card for card in cards}
         self.action = action
         super().__init__(
-            placeholder="カードを選ぶ",
+            placeholder={
+                "favorite": "お気に入りの一枚を選ぶ",
+                "redeem_xp": "交換するカードを1種類選ぶ",
+                "protect": "保護設定を切り替えるカードを選ぶ",
+            }[action],
             options=[
                 discord.SelectOption(
-                    label=card.name[:100],
+                    label=(
+                        f"{'🔒' if card.is_protected else '🔓'} {card.name}"
+                        if action == "protect"
+                        else f"{_rarity_label(card.rarity)}｜{card.name}"
+                    )[:100],
                     value=card.key,
                     description=(
-                        f"所持 {card.count}枚 · "
-                        + (
-                            f"交換可 {card.exchangeable_count}枚"
-                            if action == "redeem_xp"
-                            else "保護中"
-                            if card.is_protected
-                            else "未保護"
-                            if action == "protect"
-                            else f"累計 {card.lifetime_count}枚"
+                        f"交換可 {card.exchangeable_count}枚 · "
+                        f"1枚 {card.exchange_xp} XP"
+                        if action == "redeem_xp"
+                        else (
+                            f"所持 {card.count}枚 · "
+                            + (
+                                "保護を解除"
+                                if card.is_protected
+                                else "重複を交換から保護"
+                            )
                         )
-                    )[:100],
+                        if action == "protect"
+                        else None
+                    )[:100]
+                    if action != "favorite"
+                    else None,
                 )
                 for card in cards
             ],
@@ -415,13 +474,15 @@ class CardChoiceSelect(discord.ui.Select[discord.ui.View]):
         context = _actor_api(interaction)
         if context is None:
             await interaction.response.send_message(
-                "カフェのデータサービスを利用できません。", ephemeral=True
+                "このサーバーでは利用できません。", ephemeral=True
             )
             return
         actor, api = context
         if self.action == "redeem_xp":
             await interaction.response.send_message(
-                f"**{card.name}** の交換枚数を選んでください。",
+                f"**{_rarity_label(card.rarity)}｜{card.name}** "
+                "の交換枚数を選んでください"
+                f"（重複 {card.exchangeable_count}枚）。",
                 view=QuantityView(
                     guild_id=int(actor.guild_id),
                     user_id=int(actor.user_id),
@@ -430,7 +491,6 @@ class CardChoiceSelect(discord.ui.Select[discord.ui.View]):
                 ephemeral=True,
             )
             return
-        await interaction.response.defer(ephemeral=True, thinking=True)
         try:
             result = (
                 await api.set_favorite(actor, reward_key=card.key)
@@ -445,18 +505,28 @@ class CardChoiceSelect(discord.ui.Select[discord.ui.View]):
             await send_api_error(interaction, exc)
             return
         if result.status != "updated":
-            await interaction.followup.send(
-                "所持状態が変わったため更新できませんでした。棚を開き直してください。",
+            await interaction.response.send_message(
+                (
+                    "そのカードは現在所持していません。"
+                    if self.action == "favorite"
+                    else (
+                        "そのカードは現在所持していません。"
+                        "コレクションを開き直してください。"
+                    )
+                ),
                 ephemeral=True,
             )
             return
         if self.action == "favorite":
             message = f"お気に入りの一枚を **{result.reward_name}** にしました。"
         elif result.protected:
-            message = f"🔒 **{result.reward_name}** を交換から保護しました。"
+            message = (
+                f"🔒 **{result.reward_name}** を保護しました。"
+                "今後のXP・メダル交換から除外します。"
+            )
         else:
             message = f"🔓 **{result.reward_name}** の保護を解除しました。"
-        await interaction.followup.send(message, ephemeral=True)
+        await interaction.response.send_message(message, ephemeral=True)
 
 
 class CardChoiceView(UserView):
@@ -480,38 +550,63 @@ class RedemptionConfirmView(UserView):
         user_id: int,
         quantities: dict[str, int],
         kind: RedemptionKind,
+        confirm_label: str,
+        unavailable_message: str,
     ) -> None:
         super().__init__(guild_id=guild_id, user_id=user_id)
         self.quantities = quantities
         self.kind = kind
+        self.event_id = str(uuid4())
+        self.unavailable_message = unavailable_message
+        self.confirm.label = confirm_label
+        if kind == "medals":
+            self.remove_item(self.cancel)
 
-    @discord.ui.button(label="この内容で交換する", style=discord.ButtonStyle.danger)
+    async def interaction_check(self, _interaction: discord.Interaction) -> bool:
+        # Confirm/cancel intentionally have different ownership and access checks,
+        # matching the existing bot's interaction behavior.
+        return True
+
+    @discord.ui.button(label="交換する", style=discord.ButtonStyle.danger)
     async def confirm(
         self,
         interaction: discord.Interaction,
         _button: discord.ui.Button[discord.ui.View],
     ) -> None:
+        if interaction.user.id != self.user_id or (
+            self.kind == "xp" and interaction.guild is None
+        ):
+            await interaction.response.send_message(
+                "本人だけが確定できます。", ephemeral=True
+            )
+            return
         context = _actor_api(interaction)
         if context is None:
             await interaction.response.send_message(
-                "カフェのデータサービスを利用できません。", ephemeral=True
+                "このサーバーでは利用できません。", ephemeral=True
             )
             return
         actor, api = context
+        if int(actor.guild_id) != self.guild_id:
+            await interaction.response.send_message(
+                "このサーバーでは利用できません。", ephemeral=True
+            )
+            return
+        if not await ensure_feature_access(interaction, api, actor):
+            return
         await interaction.response.edit_message(content="交換しています…", view=None)
-        event_id = f"cafe-bot:redemption:{interaction.id}"
         try:
             result = (
                 await api.redeem_xp(
                     actor,
-                    event_id=event_id,
+                    event_id=self.event_id,
                     display_name=interaction.user.display_name,
                     quantities=self.quantities,
                 )
                 if self.kind == "xp"
                 else await api.redeem_medals(
                     actor,
-                    event_id=event_id,
+                    event_id=self.event_id,
                     display_name=interaction.user.display_name,
                     quantities=self.quantities,
                 )
@@ -522,16 +617,10 @@ class RedemptionConfirmView(UserView):
         self.stop()
         if result.status != "redeemed":
             await interaction.followup.send(
-                "重複枚数が変わったため交換できませんでした。棚を開き直してください。",
+                self.unavailable_message,
                 ephemeral=True,
             )
             return
-        message = (
-            f"**{result.reward_xp:,} XP** を受け取りました。台帳にも順次反映されます。"
-            if self.kind == "xp"
-            else f"**{result.reward_medals:,}カフェメダル** を受け取りました。"
-        )
-        await interaction.followup.send(message, ephemeral=True)
         if (
             self.kind == "xp"
             and interaction.guild is not None
@@ -546,6 +635,15 @@ class RedemptionConfirmView(UserView):
                     "Failed to publish Cafe ledger for guild %s",
                     interaction.guild.id,
                 )
+        message = (
+            f"{result.reward_xp:,} XP を受け取りました。"
+            if self.kind == "xp"
+            else (
+                f"☕ **{result.reward_medals:,}メダル**を受け取りました。\n"
+                f"現在: **{result.medal_balance or 0:,}メダル**"
+            )
+        )
+        await interaction.followup.send(message, ephemeral=True)
 
     @discord.ui.button(label="キャンセル", style=discord.ButtonStyle.secondary)
     async def cancel(
@@ -553,6 +651,11 @@ class RedemptionConfirmView(UserView):
         interaction: discord.Interaction,
         _button: discord.ui.Button[discord.ui.View],
     ) -> None:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "本人だけが操作できます。", ephemeral=True
+            )
+            return
         await interaction.response.edit_message(
             content="交換をキャンセルしました。", view=None
         )
@@ -571,13 +674,19 @@ async def _send_redemption_confirmation(
             f"**{_rarity_label(card.rarity)}｜{card.name} × {quantity}枚** "
             "を交換します。\n"
             f"所持: {card.count} → **{card.count - quantity}枚**\n"
-            f"受取: **{reward:,} XP**\n最初の1枚は残ります。"
+            f"受取: **{reward:,} XP**\n"
+            "コレクション用の最初の1枚は残ります。"
         ),
         view=RedemptionConfirmView(
             guild_id=interaction.guild_id or 0,
             user_id=interaction.user.id,
             quantities={card.key: quantity},
             kind="xp",
+            confirm_label="このカードを交換する",
+            unavailable_message=(
+                "重複枚数が変わったため交換できませんでした。"
+                "コレクションを開き直してください。"
+            ),
         ),
         ephemeral=True,
     )
@@ -588,8 +697,15 @@ class CustomQuantityModal(discord.ui.Modal, title="交換する重複枚数"):
         label="枚数", placeholder="1", min_length=1, max_length=4
     )
 
-    def __init__(self, *, user_id: int, card: CafeCollectionCard) -> None:
+    def __init__(
+        self,
+        *,
+        guild_id: int,
+        user_id: int,
+        card: CafeCollectionCard,
+    ) -> None:
         super().__init__()
+        self.guild_id = guild_id
         self.user_id = user_id
         self.card = card
 
@@ -598,6 +714,15 @@ class CustomQuantityModal(discord.ui.Modal, title="交換する重複枚数"):
             await interaction.response.send_message(
                 "本人だけが操作できます。", ephemeral=True
             )
+            return
+        context = _actor_api(interaction)
+        if context is None or int(context[0].guild_id) != self.guild_id:
+            await interaction.response.send_message(
+                "このサーバーでは利用できません。", ephemeral=True
+            )
+            return
+        actor, api = context
+        if not await ensure_feature_access(interaction, api, actor):
             return
         try:
             quantity = int(self.quantity.value)
@@ -626,9 +751,8 @@ class QuantityView(UserView):
     ) -> None:
         super().__init__(guild_id=guild_id, user_id=user_id)
         self.card = card
-        self.all_duplicates.label = f"全{card.exchangeable_count}枚"
 
-    @discord.ui.button(label="1枚", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="このカードを1枚交換", style=discord.ButtonStyle.primary)
     async def one(
         self,
         interaction: discord.Interaction,
@@ -636,7 +760,10 @@ class QuantityView(UserView):
     ) -> None:
         await _send_redemption_confirmation(interaction, card=self.card, quantity=1)
 
-    @discord.ui.button(label="すべて", style=discord.ButtonStyle.danger)
+    @discord.ui.button(
+        label="このカードの重複を全交換",
+        style=discord.ButtonStyle.secondary,
+    )
     async def all_duplicates(
         self,
         interaction: discord.Interaction,
@@ -648,14 +775,21 @@ class QuantityView(UserView):
             quantity=self.card.exchangeable_count,
         )
 
-    @discord.ui.button(label="枚数を入力", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(
+        label="このカードの枚数を指定",
+        style=discord.ButtonStyle.secondary,
+    )
     async def custom(
         self,
         interaction: discord.Interaction,
         _button: discord.ui.Button[discord.ui.View],
     ) -> None:
         await interaction.response.send_modal(
-            CustomQuantityModal(user_id=self.user_id, card=self.card)
+            CustomQuantityModal(
+                guild_id=self.guild_id,
+                user_id=self.user_id,
+                card=self.card,
+            )
         )
 
 
@@ -663,9 +797,18 @@ class BulkExchangeButton(discord.ui.Button[discord.ui.View]):
     def __init__(self, *, collection: CafeCollection, kind: RedemptionKind) -> None:
         self.collection = collection
         self.kind = kind
-        label = "全重複をXPへ" if kind == "xp" else "全重複をメダルへ"
-        emoji = "♻️" if kind == "xp" else "🪙"
-        super().__init__(label=label, emoji=emoji, row=1)
+        label = "全重複をXP交換" if kind == "xp" else "全重複をメダル交換"
+        emoji = "♻️" if kind == "xp" else "☕"
+        super().__init__(
+            label=label,
+            emoji=emoji,
+            style=(
+                discord.ButtonStyle.success
+                if kind == "xp"
+                else discord.ButtonStyle.secondary
+            ),
+            row=1 if kind == "xp" else 2,
+        )
 
     async def callback(self, interaction: discord.Interaction) -> None:
         quantities = {
@@ -683,20 +826,54 @@ class BulkExchangeButton(discord.ui.Button[discord.ui.View]):
                 card.exchange_xp * card.exchangeable_count
                 for card in self.collection.cards
             )
-            reward_text = f"**{reward:,} XP**"
+            details = []
+            for rarity in RARITY_ORDER:
+                cards = [
+                    card
+                    for card in self.collection.cards
+                    if card.rarity == rarity and card.exchangeable_count > 0
+                ]
+                if not cards:
+                    continue
+                quantity = sum(card.exchangeable_count for card in cards)
+                reward_xp = sum(
+                    card.exchange_xp * card.exchangeable_count for card in cards
+                )
+                details.append(
+                    f"{_rarity_label(rarity)}: {len(cards)}種・{quantity}枚 "
+                    f"→ {reward_xp:,} XP"
+                )
+            content = (
+                "交換可能な重複カードをすべてXPへ交換します。\n"
+                + "\n".join(details)
+                + "\n**各カードの最初の1枚と保護カードは残ります。**"
+                + f"\n\n受取合計: **{reward:,} XP**"
+            )
+            confirm_label = "全重複をXPへ交換する"
+            unavailable_message = (
+                "所持数が変わったため交換できませんでした。"
+                "コレクションを開き直してください。"
+            )
         else:
             reward = sum(
                 card.exchange_medals * card.exchangeable_count
                 for card in self.collection.cards
             )
-            reward_text = f"**{reward:,}カフェメダル**"
+            content = (
+                f"全カードの重複を **{reward:,}カフェメダル**へ交換します。\n"
+                "XPには交換されません。最初の1枚と保護カードは残ります。"
+            )
+            confirm_label = "メダルへ交換する"
+            unavailable_message = "所持数が変わったため交換できませんでした。"
         await interaction.response.send_message(
-            f"未保護の重複 {sum(quantities.values())}枚を {reward_text} へ交換します。",
+            content,
             view=RedemptionConfirmView(
                 guild_id=interaction.guild_id or 0,
                 user_id=interaction.user.id,
                 quantities=quantities,
                 kind=self.kind,
+                confirm_label=confirm_label,
+                unavailable_message=unavailable_message,
             ),
             ephemeral=True,
         )
@@ -757,20 +934,38 @@ class CosmeticConfirmView(UserView):
         super().__init__(guild_id=guild_id, user_id=user_id)
         self.cosmetic = cosmetic
 
+    async def interaction_check(self, _interaction: discord.Interaction) -> bool:
+        return True
+
     @discord.ui.button(label="購入・装備する", style=discord.ButtonStyle.primary)
     async def confirm(
         self,
         interaction: discord.Interaction,
         _button: discord.ui.Button[discord.ui.View],
     ) -> None:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "本人だけが確定できます。", ephemeral=True
+            )
+            return
         context = _actor_api(interaction)
         if context is None:
             await interaction.response.send_message(
-                "カフェのデータサービスを利用できません。", ephemeral=True
+                "このサーバーでは利用できません。", ephemeral=True
             )
             return
         actor, api = context
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        if int(actor.guild_id) != self.guild_id:
+            await interaction.response.send_message(
+                "このサーバーでは利用できません。", ephemeral=True
+            )
+            return
+        if not await ensure_feature_access(interaction, api, actor):
+            return
+        await interaction.response.edit_message(
+            content="棚テーマを確認しています…", view=None
+        )
+        self.stop()
         try:
             result = await api.equip_cosmetic(actor, cosmetic_key=self.cosmetic.key)
         except CafeApiError as exc:
@@ -795,15 +990,27 @@ class ThemeButton(discord.ui.Button[discord.ui.View]):
         self.collection = collection
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        context = _actor_api(interaction)
+        if context is None:
+            await interaction.response.send_message(
+                "このサーバーでは利用できません。", ephemeral=True
+            )
+            return
+        actor, api = context
+        try:
+            collection = await api.collection(actor)
+        except CafeApiError as exc:
+            await send_api_error(interaction, exc)
+            return
         await interaction.response.send_message(
             (
-                f"現在 **{self.collection.medal_balance:,}カフェメダル**です。"
+                f"現在 **{collection.medal_balance:,}カフェメダル**です。"
                 "棚テーマを選んでください。"
             ),
             view=CosmeticSelectView(
                 guild_id=interaction.guild_id or 0,
                 user_id=interaction.user.id,
-                cosmetics=self.collection.cosmetics,
+                cosmetics=collection.cosmetics,
             ),
             ephemeral=True,
         )
@@ -828,11 +1035,10 @@ class MossProtectionButton(discord.ui.Button[discord.ui.View]):
         context = _actor_api(interaction)
         if context is None:
             await interaction.response.send_message(
-                "カフェのデータサービスを利用できません。", ephemeral=True
+                "このサーバーでは利用できません。", ephemeral=True
             )
             return
         actor, api = context
-        await interaction.response.defer(ephemeral=True, thinking=True)
         try:
             result = await api.set_protection(
                 actor,
@@ -849,7 +1055,7 @@ class MossProtectionButton(discord.ui.Button[discord.ui.View]):
             if result.status == "updated"
             else "苔コーラを現在所持していません。棚を開き直してください。"
         )
-        await interaction.followup.send(message, ephemeral=True)
+        await interaction.response.send_message(message, ephemeral=True)
 
 
 def _set_embed(collection: CafeCollection, page: int) -> discord.Embed:
@@ -860,9 +1066,9 @@ def _set_embed(collection: CafeCollection, page: int) -> discord.Embed:
         description=(
             f"完成 **{sum(item.completed for item in collection.sets)}/"
             f"{len(collection.sets)}セット**\n"
-            "一度でも引いたカードで判定するため、交換後も達成は消えません。"
+            "一度でも引いたカードで判定するため、重複交換後も達成は消えません。"
         ),
-        color=0x8B5A3C,
+        color=DEFAULT_EMBED_COLOR,
     )
     for item in collection.sets[page * page_size : (page + 1) * page_size]:
         embed.add_field(
@@ -927,7 +1133,7 @@ class SetMenuView(UserView):
 
 class SetMenuButton(discord.ui.Button[discord.ui.View]):
     def __init__(self, *, collection: CafeCollection) -> None:
-        super().__init__(label="セットメニュー", emoji="🍽️", row=2)
+        super().__init__(label="セットメニュー", emoji="🍽️", row=3)
         self.collection = collection
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -952,17 +1158,16 @@ class CollectionActionsView(UserView):
         collection: CafeCollection,
     ) -> None:
         super().__init__(guild_id=guild_id, user_id=user_id, timeout=180)
-        if any(card.count > 0 for card in collection.cards):
-            self.add_item(ActionButton(action="favorite", collection=collection, row=0))
-            self.add_item(ActionButton(action="protect", collection=collection, row=0))
+        owned_cards = [card for card in collection.cards if card.count > 0]
+        if owned_cards:
+            self.add_item(RarityPageSelect(cards=owned_cards, action="favorite"))
         if any(card.exchangeable_count > 0 for card in collection.cards):
             self.add_item(
-                ActionButton(action="redeem_xp", collection=collection, row=0)
+                ActionButton(action="redeem_xp", collection=collection, row=1)
             )
             self.add_item(BulkExchangeButton(collection=collection, kind="xp"))
             self.add_item(BulkExchangeButton(collection=collection, kind="medals"))
         self.add_item(ThemeButton(collection=collection))
-        self.add_item(SetMenuButton(collection=collection))
         moss_cola = next(
             (
                 card
@@ -973,3 +1178,6 @@ class CollectionActionsView(UserView):
         )
         if moss_cola is not None:
             self.add_item(MossProtectionButton(card=moss_cola))
+        if owned_cards:
+            self.add_item(ActionButton(action="protect", collection=collection, row=3))
+        self.add_item(SetMenuButton(collection=collection))

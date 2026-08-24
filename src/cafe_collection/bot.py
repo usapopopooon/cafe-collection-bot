@@ -49,7 +49,7 @@ class CafeCollectionBot(commands.Bot):
 
     @staticmethod
     def _validate_capabilities(capabilities: CafeCapabilities) -> None:
-        if capabilities.api_version != 3:
+        if capabilities.api_version != 4:
             raise RuntimeError("Unsupported level-bot Cafe API version")
         if (
             capabilities.catalog_size != EXPECTED_CATALOG_SIZE

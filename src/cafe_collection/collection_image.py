@@ -24,10 +24,19 @@ def _render_page(cards: Sequence[CafeCollectionCard]) -> bytes:
     font = ImageFont.load_default(size=18)
     with Image.open(ASSET_DIR / "card-back.jpg") as source:
         card_back = source.convert("RGB")
-    for index, card in enumerate(cards):
+    for index in range(columns * rows):
         x = index % columns * CELL_SIZE
         y = index // columns * CELL_SIZE
-        if card.count:
+        if index >= len(cards):
+            draw.rectangle(
+                (x + 3, y + 3, x + CELL_SIZE - 3, y + CELL_SIZE - 3),
+                outline="#4a342a",
+                width=2,
+            )
+            continue
+        card = cards[index]
+        count = max(0, card.count)
+        if count:
             image_path = card_image_path(card.key)
             if image_path is None or image_path.name != card.image_filename:
                 raise ValueError(f"invalid Cafe image mapping: {card.key}")
@@ -36,7 +45,7 @@ def _render_page(cards: Sequence[CafeCollectionCard]) -> bytes:
         else:
             image = card_back.copy()
         tile = ImageOps.fit(image, (CELL_SIZE, CELL_SIZE))
-        if not card.count:
+        if not count:
             tile = ImageEnhance.Brightness(tile).enhance(0.38)
         canvas.paste(tile, (x, y))
         draw.rectangle((x + 4, y + 4, x + 58, y + 32), fill="#17100dcc")
@@ -46,7 +55,7 @@ def _render_page(cards: Sequence[CafeCollectionCard]) -> bytes:
             font=font,
             fill="white",
         )
-        badge = "-" if card.count == 0 else f"x{card.count}"
+        badge = "-" if count == 0 else f"x{count}"
         draw.rectangle(
             (
                 x + CELL_SIZE - 58,
