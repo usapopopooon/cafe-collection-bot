@@ -10,6 +10,7 @@ import discord
 from discord.ext import commands, tasks
 
 from cafe_collection.assets import manifest_sha256
+from cafe_collection.ledger import publish_pending_for_guild
 from cafe_collection.level_api import CafeApiClient, CafeApiError, CafeCapabilities
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ class CafeCollectionBot(commands.Bot):
 
     @staticmethod
     def _validate_capabilities(capabilities: CafeCapabilities) -> None:
-        if capabilities.api_version != 1:
+        if capabilities.api_version != 3:
             raise RuntimeError("Unsupported level-bot Cafe API version")
         if (
             capabilities.catalog_size != EXPECTED_CATALOG_SIZE
@@ -82,6 +83,23 @@ class CafeCollectionBot(commands.Bot):
         """Keep container readiness aligned with the required level-bot API."""
         await self._probe_level_api()
 
+    @tasks.loop(minutes=5)
+    async def ledger_delivery_loop(self) -> None:
+        """Retry this bot's configured public ledgers independently."""
+        if self.cafe_api is None:
+            return
+        for guild in self.guilds:
+            try:
+                await publish_pending_for_guild(self, self.cafe_api, guild)
+            except CafeApiError:
+                logger.exception(
+                    "Failed to load Cafe ledger transactions for guild %s", guild.id
+                )
+
+    @ledger_delivery_loop.before_loop
+    async def before_ledger_delivery_loop(self) -> None:
+        await self.wait_until_ready()
+
     async def setup_hook(self) -> None:
         write_readiness_marker(False)
         if self.cafe_api is None:
@@ -94,6 +112,7 @@ class CafeCollectionBot(commands.Bot):
         synced = await self.tree.sync()
         logger.info("Installed and synced %d Cafe commands", len(synced))
         self.level_api_health_loop.start()
+        self.ledger_delivery_loop.start()
 
     async def on_ready(self) -> None:
         self._discord_ready = True
@@ -114,6 +133,7 @@ class CafeCollectionBot(commands.Bot):
         self._level_api_ready = False
         self._publish_readiness()
         self.level_api_health_loop.cancel()
+        self.ledger_delivery_loop.cancel()
         if self.cafe_api is not None:
             await self.cafe_api.close()
         await super().close()

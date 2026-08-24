@@ -34,10 +34,14 @@ async def test_bot_readiness_tracks_discord_connection(
         return httpx.Response(
             200,
             json={
-                "api_version": 1,
+                "api_version": 3,
                 "catalog_size": 361,
                 "asset_count": 363,
                 "asset_manifest_sha256": manifest_sha256(),
+                "paid_draw_cost_xp": 20,
+                "hourly_draw_limit": 10,
+                "minimum_draw_reward_xp": 10,
+                "maximum_draw_reward_xp": 5000,
             },
         )
 
@@ -80,10 +84,14 @@ async def test_setup_installs_commands_only_for_matching_api_and_assets(
         return httpx.Response(
             200,
             json={
-                "api_version": 1,
+                "api_version": 3,
                 "catalog_size": 361,
                 "asset_count": 363,
                 "asset_manifest_sha256": manifest_sha256(),
+                "paid_draw_cost_xp": 20,
+                "hourly_draw_limit": 10,
+                "minimum_draw_reward_xp": 10,
+                "maximum_draw_reward_xp": 5000,
             },
         )
 

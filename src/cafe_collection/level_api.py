@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Literal, TypeVar
 
 import httpx
 from pydantic import BaseModel, ValidationError
+from pydantic import Field as PydanticField
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -31,6 +33,10 @@ class CafeCapabilities(BaseModel):
     catalog_size: int
     asset_count: int
     asset_manifest_sha256: str
+    paid_draw_cost_xp: int
+    hourly_draw_limit: int
+    minimum_draw_reward_xp: int
+    maximum_draw_reward_xp: int
 
 
 class CafeWallet(BaseModel):
@@ -87,10 +93,159 @@ class CafeCollectionCard(BaseModel):
     redeemable_count: int
     lifetime_count: int
     is_protected: bool
+    exchangeable_count: int = 0
+    exchange_xp: int = 0
+    exchange_medals: int = 0
+    mastery_name: str | None = None
+    mastery_emoji: str | None = None
+
+
+class CafeCosmetic(BaseModel):
+    key: str
+    name: str
+    cost_medals: int
+    color: int
+    decoration: str
+
+
+class CafeSet(BaseModel):
+    key: str
+    name: str
+    description: str
+    completed: bool
+    missing_card_names: list[str]
+
+
+class CafeMasterySummary(BaseModel):
+    name: str
+    emoji: str
+    card_count: int
 
 
 class CafeCollection(BaseModel):
     cards: list[CafeCollectionCard]
+    favorite_reward_key: str | None = None
+    duplicate_draw_streak: int = 0
+    endgame_pity_active: bool
+    endgame_pity_duplicate_draws: int
+    mastery_tiers: list[CafeMasterySummary]
+    medal_balance: int = 0
+    active_cosmetic: CafeCosmetic | None = None
+    cosmetics: list[CafeCosmetic] = PydanticField(default_factory=list)
+    sets: list[CafeSet] = PydanticField(default_factory=list)
+
+
+class CafeCardSetting(BaseModel):
+    status: Literal["updated", "unavailable"]
+    reward_key: str | None
+    reward_name: str | None
+    protected: bool | None = None
+
+
+class CafeRedemptionItem(BaseModel):
+    reward_key: str
+    reward_name: str
+    rarity: str
+    quantity: int
+    reward_per_card: int
+    reward_total: int
+
+
+class CafeRedemption(BaseModel):
+    status: Literal["redeemed", "unavailable"]
+    reward_xp: int
+    reward_medals: int
+    items: list[CafeRedemptionItem]
+
+
+class CafeCosmeticResult(BaseModel):
+    status: Literal["equipped", "insufficient", "unavailable"]
+    cosmetic: CafeCosmetic | None
+    balance: int
+
+
+class CafeAnalytics(BaseModel):
+    draws_today: int
+    draws_7d: int
+    total_draws: int
+    active_today: int
+    active_7d: int
+    total_users: int
+    new_7d: int
+    duplicate_7d: int
+    rarity_7d: dict[str, int]
+    spent_xp_7d: int
+    draw_reward_xp_7d: int
+    redemption_xp_7d: int
+    completed_users: int
+
+
+class CafeAccessRoles(BaseModel):
+    role_ids: list[str]
+    changed: bool | None = None
+
+
+class CafeLayout(BaseModel):
+    panel_channel_id: str | None
+    panel_message_id: str | None
+    ledger_channel_id: str | None
+    ledger_message_id: str | None
+    ranking_channel_id: str | None
+    ranking_message_id: str | None
+
+
+class CafeLedgerDrawBatch(BaseModel):
+    event_id: str
+    user_id: str
+    created_at: datetime
+    draws: list[CafeDraw]
+
+
+class CafeLedgerRedemption(BaseModel):
+    event_id: str
+    user_id: str
+    created_at: datetime
+    reward_xp: int
+    items: list[CafeRedemptionItem]
+
+
+class CafeLedgerPending(BaseModel):
+    ledger_channel_id: str | None
+    draw_batches: list[CafeLedgerDrawBatch]
+    redemptions: list[CafeLedgerRedemption]
+
+
+class CafeLedgerDelivered(BaseModel):
+    delivered: bool
+
+
+class CafeRankingEntry(BaseModel):
+    rank: int
+    user_id: str
+    collection_count: int
+    mastery_score: int
+    signature_cards: int
+    completed_sets: int
+    rare_collection_count: int
+    treasure_collection_count: int
+    n_mastery_score: int
+    coffee_mastery_score: int
+    tea_mastery_score: int
+    sweets_mastery_score: int
+    culture_mastery_score: int
+
+
+class CafeRankingCategory(BaseModel):
+    key: str
+    entries: list[CafeRankingEntry]
+    viewer_entry: CafeRankingEntry | None = None
+
+
+class CafeRankings(BaseModel):
+    participant_count: int
+    total_draws: int
+    captured_at: datetime
+    categories: list[CafeRankingCategory]
 
 
 @dataclass
@@ -179,3 +334,181 @@ class CafeApiClient:
             json={"actor": actor.model_dump()},
         )
         return self._validate(CafeCollection, data)
+
+    async def set_favorite(
+        self, actor: CafeActor, *, reward_key: str
+    ) -> CafeCardSetting:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/favorite",
+            json={"actor": actor.model_dump(), "reward_key": reward_key},
+        )
+        return self._validate(CafeCardSetting, data)
+
+    async def set_protection(
+        self,
+        actor: CafeActor,
+        *,
+        reward_key: str,
+        protected: bool,
+    ) -> CafeCardSetting:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/protection",
+            json={
+                "actor": actor.model_dump(),
+                "reward_key": reward_key,
+                "protected": protected,
+            },
+        )
+        return self._validate(CafeCardSetting, data)
+
+    async def redeem_xp(
+        self,
+        actor: CafeActor,
+        *,
+        event_id: str,
+        display_name: str,
+        quantities: dict[str, int],
+    ) -> CafeRedemption:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/redemptions/xp",
+            json={
+                "actor": actor.model_dump(),
+                "event_id": event_id,
+                "display_name": display_name,
+                "quantities": quantities,
+            },
+        )
+        return self._validate(CafeRedemption, data)
+
+    async def redeem_medals(
+        self,
+        actor: CafeActor,
+        *,
+        event_id: str,
+        display_name: str,
+        quantities: dict[str, int],
+    ) -> CafeRedemption:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/redemptions/medals",
+            json={
+                "actor": actor.model_dump(),
+                "event_id": event_id,
+                "display_name": display_name,
+                "quantities": quantities,
+            },
+        )
+        return self._validate(CafeRedemption, data)
+
+    async def equip_cosmetic(
+        self, actor: CafeActor, *, cosmetic_key: str
+    ) -> CafeCosmeticResult:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/cosmetics/equip",
+            json={"actor": actor.model_dump(), "cosmetic_key": cosmetic_key},
+        )
+        return self._validate(CafeCosmeticResult, data)
+
+    async def analytics(self, actor: CafeActor) -> CafeAnalytics:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/analytics",
+            json={"actor": actor.model_dump()},
+        )
+        return self._validate(CafeAnalytics, data)
+
+    async def access_roles(self, actor: CafeActor) -> CafeAccessRoles:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/access-roles",
+            json={"actor": actor.model_dump()},
+        )
+        return self._validate(CafeAccessRoles, data)
+
+    async def add_access_role(
+        self, actor: CafeActor, *, role_id: str
+    ) -> CafeAccessRoles:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/access-roles/add",
+            json={"actor": actor.model_dump(), "role_id": role_id},
+        )
+        return self._validate(CafeAccessRoles, data)
+
+    async def remove_access_role(
+        self, actor: CafeActor, *, role_id: str
+    ) -> CafeAccessRoles:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/access-roles/remove",
+            json={"actor": actor.model_dump(), "role_id": role_id},
+        )
+        return self._validate(CafeAccessRoles, data)
+
+    async def layout(self, actor: CafeActor) -> CafeLayout:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/discord-layout",
+            json={"actor": actor.model_dump()},
+        )
+        return self._validate(CafeLayout, data)
+
+    async def save_placement(
+        self,
+        actor: CafeActor,
+        *,
+        placement: Literal["panel", "ledger", "ranking"],
+        channel_id: str,
+        message_id: str | None,
+    ) -> CafeLayout:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/discord-layout/placements",
+            json={
+                "actor": actor.model_dump(),
+                "placement": placement,
+                "channel_id": channel_id,
+                "message_id": message_id,
+            },
+        )
+        return self._validate(CafeLayout, data)
+
+    async def pending_ledger(self, *, guild_id: str) -> CafeLedgerPending:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/ledger/pending",
+            json={"guild_id": guild_id},
+        )
+        return self._validate(CafeLedgerPending, data)
+
+    async def mark_ledger_delivered(
+        self,
+        *,
+        guild_id: str,
+        record_type: Literal["draw", "redemption"],
+        event_id: str,
+        message_id: str,
+    ) -> CafeLedgerDelivered:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/ledger/delivered",
+            json={
+                "guild_id": guild_id,
+                "record_type": record_type,
+                "event_id": event_id,
+                "message_id": message_id,
+            },
+        )
+        return self._validate(CafeLedgerDelivered, data)
+
+    async def rankings(self, actor: CafeActor) -> CafeRankings:
+        data = await self._request(
+            "POST",
+            "/api/v1/integrations/cafe-collection/rankings",
+            json={"actor": actor.model_dump()},
+        )
+        return self._validate(CafeRankings, data)
