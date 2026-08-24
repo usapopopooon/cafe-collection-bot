@@ -803,20 +803,15 @@ async def _find_or_create_channel(
 
 
 class CafeCog(commands.Cog):
-    cafe_group = app_commands.Group(
-        name="cafe-gacha",
-        description="カフェガチャの管理",
-        default_permissions=discord.Permissions(administrator=True),
+    cafe_collection_group = app_commands.Group(
+        name="cafe-collection",
+        description="カフェ・コレクションの管理",
+        guild_only=True,
     )
     access_role = app_commands.Group(
         name="access-role",
         description="カフェ・コレクションの利用ロール管理",
-        parent=cafe_group,
-    )
-    cafe_collection_group = app_commands.Group(
-        name="cafe-collection",
-        description="カフェ・コレクションのカード棚を管理",
-        guild_only=True,
+        parent=cafe_collection_group,
     )
 
     def __init__(self, bot: commands.Bot, api: CafeApiClient) -> None:
@@ -1137,7 +1132,9 @@ class CafeCog(commands.Cog):
             ephemeral=True,
         )
 
-    @cafe_group.command(name="stats", description="利用状況とXP収支を管理者だけに表示")
+    @cafe_collection_group.command(
+        name="stats", description="利用状況とXP収支を管理者だけに表示"
+    )
     @app_commands.checks.has_permissions(administrator=True)
     async def stats(self, interaction: discord.Interaction) -> None:
         actor = _actor(interaction)
@@ -1236,7 +1233,7 @@ class CafeCog(commands.Cog):
     async def access_list(self, interaction: discord.Interaction) -> None:
         await self._access_role(interaction, action="list")
 
-    @cafe_group.command(
+    @cafe_collection_group.command(
         name="setup",
         description="カウンター・台帳・抽選パネルを作成または修復",
     )
@@ -1271,7 +1268,7 @@ class CafeCog(commands.Cog):
             ephemeral=True,
         )
 
-    @cafe_group.command(
+    @cafe_collection_group.command(
         name="leaderboard-panel",
         description="選んだチャンネルへランキングパネルを投稿または更新",
     )
@@ -1322,7 +1319,7 @@ class CafeCog(commands.Cog):
             panel = None
         if panel is None:
             await interaction.followup.send(
-                "先に `/cafe-gacha setup` を実行してください。",
+                "先に `/cafe-collection setup` を実行してください。",
                 ephemeral=True,
             )
             return

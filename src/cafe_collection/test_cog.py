@@ -457,29 +457,32 @@ async def test_panel_draw_uses_distinct_component_id_and_interaction_id() -> Non
 
 def test_cafe_command_group_exposes_user_and_admin_feature_parity() -> None:
     assert {command.name for command in CafeCog.__cog_app_commands__} == {
-        "cafe-gacha",
-        "cafe-collection",
+        "cafe-collection"
     }
-    cafe_gacha = next(
+    cafe_collection = next(
         command
         for command in CafeCog.__cog_app_commands__
-        if command.name == "cafe-gacha"
+        if command.name == "cafe-collection"
     )
-    assert isinstance(cafe_gacha, app_commands.Group)
-    assert {command.name for command in cafe_gacha.commands} == {
+    assert isinstance(cafe_collection, app_commands.Group)
+    assert {command.name for command in cafe_collection.commands} == {
         "setup",
         "leaderboard-panel",
         "stats",
         "access-role",
+        "protect",
     }
-    assert {command.name: command.description for command in cafe_gacha.commands} == {
+    assert {
+        command.name: command.description for command in cafe_collection.commands
+    } == {
         "setup": "カウンター・台帳・抽選パネルを作成または修復",
         "leaderboard-panel": "選んだチャンネルへランキングパネルを投稿または更新",
         "stats": "利用状況とXP収支を管理者だけに表示",
         "access-role": "カフェ・コレクションの利用ロール管理",
+        "protect": "名前検索で所持カードの保護／解除を切り替える",
     }
     access_role = next(
-        command for command in cafe_gacha.commands if command.name == "access-role"
+        command for command in cafe_collection.commands if command.name == "access-role"
     )
     assert isinstance(access_role, app_commands.Group)
     assert {command.name for command in access_role.commands} == {
@@ -492,17 +495,24 @@ def test_cafe_command_group_exposes_user_and_admin_feature_parity() -> None:
         "remove": "利用ロールを削除",
         "list": "利用ロールを表示",
     }
-    cafe_collection = next(
-        command
-        for command in CafeCog.__cog_app_commands__
-        if command.name == "cafe-collection"
+    commands_by_name = {command.name: command for command in cafe_collection.commands}
+    stats_command = commands_by_name["stats"]
+    setup_command = commands_by_name["setup"]
+    leaderboard_command = commands_by_name["leaderboard-panel"]
+    protect_command = commands_by_name["protect"]
+    assert isinstance(stats_command, app_commands.Command)
+    assert isinstance(setup_command, app_commands.Command)
+    assert isinstance(leaderboard_command, app_commands.Command)
+    assert isinstance(protect_command, app_commands.Command)
+    assert len(stats_command.checks) == 1
+    assert len(setup_command.checks) == 2
+    assert len(leaderboard_command.checks) == 1
+    assert all(
+        isinstance(command, app_commands.Command) and len(command.checks) == 1
+        for command in access_role.commands
     )
-    assert isinstance(cafe_collection, app_commands.Group)
-    assert {command.name for command in cafe_collection.commands} == {"protect"}
-    assert cafe_collection.description == "カフェ・コレクションのカード棚を管理"
-    assert cafe_collection.commands[0].description == (
-        "名前検索で所持カードの保護／解除を切り替える"
-    )
+    assert len(protect_command.checks) == 0
+    assert cafe_collection.description == "カフェ・コレクションの管理"
 
 
 async def test_legacy_ledger_header_is_deleted_instead_of_reposted() -> None:

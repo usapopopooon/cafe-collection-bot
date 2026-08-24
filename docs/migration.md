@@ -13,8 +13,8 @@ DBモデル、マイグレーション、公開APIの正本は引き続き `leve
 3. 新Botを `BOT_ENABLED=false` で配置し、画像APIとマニフェスト一致を確認する。
 4. `CAFE_COLLECTION_BOT_ENABLED=true` を維持したまま新Botを有効にし、両Botで同じ抽選・
    XP・コレクション状態が見えることを確認する。
-5. 新Botで `/cafe-gacha setup` を実行してカウンター・台帳・抽選パネルを作成し、
-   `/cafe-gacha leaderboard-panel channel` でランキングの投稿先を選ぶ。
+5. 新Botで `/cafe-collection setup` を実行してカウンター・台帳・抽選パネルを作成し、
+   `/cafe-collection leaderboard-panel channel` でランキングの投稿先を選ぶ。
 6. 新Botでも交換、保護、お気に入り、メダル、棚テーマ、セットメニュー、統計、
    利用ロール管理を含む全機能が使えることを確認する。状態の正本はlevel-botに置いた
    まま、旧Botも有効に保つ。各Botは自分に設定された台帳へ独立して投稿する。

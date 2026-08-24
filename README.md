@@ -18,12 +18,12 @@ SHA-256マニフェストに固定しています。
 確定取引を両方の台帳へ1回ずつ掲載します。抽選とXP交換の操作ID、DB更新は共通のため、
 Discordの再送や2つのBotの併用で同じ取引そのものを二重確定しません。
 
-公開コマンドも `level-bot` と同じです。
+新Botの公開コマンドは `/cafe-collection` 配下へ統一しています。
 
-- `/cafe-gacha setup`: カウンター・台帳・抽選パネルを作成または修復
-- `/cafe-gacha leaderboard-panel channel`: 選んだチャンネルへランキングパネルを投稿または更新
-- `/cafe-gacha stats`: 利用状況とXP収支を管理者だけに表示
-- `/cafe-gacha access-role add|remove|list`: 利用ロールを管理
+- `/cafe-collection setup`: カウンター・台帳・抽選パネルを作成または修復
+- `/cafe-collection leaderboard-panel channel`: 選んだチャンネルへランキングパネルを投稿または更新
+- `/cafe-collection stats`: 利用状況とXP収支を管理者だけに表示
+- `/cafe-collection access-role add|remove|list`: 利用ロールを管理
 - `/cafe-collection protect`: 名前検索で所持カードの保護／解除を切り替え
 
 台帳チャンネルに説明用の見出しカードは投稿しません。確定した抽選結果とXP交換だけを
