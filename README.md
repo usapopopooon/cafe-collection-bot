@@ -2,9 +2,15 @@
 
 カフェ・コレクションを `level-bot` から段階的に分離するためのDiscord Botです。
 
-現在は独立したBot、内部ヘルスAPI、PostgreSQL、CI、Docker Composeを持ち、Coolifyへ
-無効状態で先行配置できる構成です。カフェカード、抽選、コレクション、交換、ランキング、
-公開API、DBテーブルの正本はまだ `level-bot` であり、このBotへは移していません。
+現在は独立したBot、画像・ヘルスAPI、CI、Docker Composeを持ち、Coolifyへ
+配置できます。`/cafe draw` と `/cafe collection` は認証付き内部APIを通じてlevel-botの
+同じ抽選・XP・コレクション状態を利用します。画像363枚は両リポジトリで同じ
+SHA-256マニフェストに固定しています。
+
+交換、カスタマイズ、ランキング、公開台帳、公開API、DBテーブルの正本はまだ
+`level-bot` です。併用中の新Botの抽選結果は本人だけに表示し、旧Botの公開台帳処理と
+二重投稿しないようにしています。確定した抽選はlevel-bot側の既存再試行処理が拾い、
+最大5分程度で従来のカフェ台帳にも投稿します。
 
 ## 開発
 
@@ -13,13 +19,14 @@
 ```bash
 uv sync --extra dev
 cp .env.example .env
-docker compose up -d postgres api
+docker compose up -d api
 uv run pytest -q
 uv run python -m cafe_collection
 ```
 
 `.env` の `DISCORD_TOKEN` には、新しく作成したDiscord ApplicationのBot Tokenを設定します。
-旧Botとのコマンド二重登録を避けるため、移行準備中は `BOT_ENABLED=false` のままにします。
+`LEVEL_BOT_API_BASE_URL` と `LEVEL_BOT_API_TOKEN` はlevel-bot APIのURLと専用キーを
+設定します。初回配置だけ `BOT_ENABLED=false` とし、level-bot APIの準備後に有効化します。
 
 ## 検証
 

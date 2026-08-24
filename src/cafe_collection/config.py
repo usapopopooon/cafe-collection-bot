@@ -13,16 +13,32 @@ class RuntimeSettings(BaseSettings):
         extra="ignore",
     )
 
-    database_url: str = "postgresql+asyncpg://cafe:cafe@localhost:5432/cafe_collection"
     log_level: str = "INFO"
 
 
 class BotSettings(RuntimeSettings):
     discord_token: SecretStr
+    level_bot_api_base_url: str
+    level_bot_api_token: SecretStr
 
     @field_validator("discord_token")
     @classmethod
     def discord_token_must_not_be_empty(cls, value: SecretStr) -> SecretStr:
         if not value.get_secret_value().strip():
             raise ValueError("DISCORD_TOKEN must be set when the bot is enabled")
+        return value
+
+    @field_validator("level_bot_api_base_url")
+    @classmethod
+    def level_bot_api_base_url_must_be_http(cls, value: str) -> str:
+        normalized = value.strip().rstrip("/")
+        if not normalized.startswith(("http://", "https://")):
+            raise ValueError("LEVEL_BOT_API_BASE_URL must be an HTTP(S) URL")
+        return normalized
+
+    @field_validator("level_bot_api_token")
+    @classmethod
+    def level_bot_api_token_must_not_be_empty(cls, value: SecretStr) -> SecretStr:
+        if not value.get_secret_value().strip():
+            raise ValueError("LEVEL_BOT_API_TOKEN must be set when the bot is enabled")
         return value

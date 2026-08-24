@@ -10,40 +10,42 @@ GitHubリポジトリからDocker Composeアプリケーションを作成しま
 - 内部ポート: `8000`
 - ヘルスチェックパス: `/readyz`
 
-`bot` は公開ドメインを必要としません。`api` も現在は内部ヘルスチェックだけなので、
-公開ドメインを割り当てる必要はありません。
+`bot` は公開ドメインを必要としません。`api` は同じ画像セットを配信できますが、現在の
+Botはコンテナ内の画像を直接添付するため、公開APIとして使わない間はドメイン不要です。
 
 ## Variables
 
-`.env.coolify.example` の内容をCoolify Variablesへ設定します。少なくともDBパスワードを
-ランダムな長い値へ変更してください。
+`.env.coolify.example` の内容をCoolify Variablesへ設定します。連携キーにはランダムな
+長い値を設定し、level-bot側と同じ値にしてください。
 
 ```text
-SERVICE_PASSWORD_POSTGRES=...
 BOT_ENABLED=false
 DISCORD_TOKEN=...
+LEVEL_BOT_API_BASE_URL=https://...
+LEVEL_BOT_API_TOKEN=...
 ```
 
 ## Safe first deployment
 
-現行 `level-bot` がカフェコマンドを所有している間は、必ず
-`BOT_ENABLED=false` でデプロイします。この状態でもBotコンテナは待機し、APIとPostgresの
-ヘルスチェックを先に確認できます。
+初回は `BOT_ENABLED=false` でデプロイし、画像APIのヘルスチェックを先に確認します。
+level-botへ同じ `CAFE_COLLECTION_API_TOKEN` を設定し、内部APIを先にデプロイしてから
+新Botを有効にします。
 
-現時点の新Botは移行用の実行基盤だけで、カフェコマンドをまだ搭載していません。
-したがって `BOT_ENABLED=true` にしても切替は完了しません。ドメイン機能とデータ移行が
-完了するまでは無効のままにします。
+新Botの `/cafe draw` と `/cafe collection` はlevel-botの内部APIを使うため、旧Botの
+パネルと同じ抽選・コレクション状態を参照します。旧Bot側の
+`CAFE_COLLECTION_BOT_ENABLED=true` は維持でき、両Botを併用できます。
 
-## Database
+Botを有効にした後は、Discordへ接続でき、かつlevel-bot内部APIのバージョン・画像
+マニフェストが一致している場合だけBotコンテナがhealthyになります。Discordまたは
+level-bot APIの切断・認証エラーは最大30秒程度でreadinessへ反映され、その後Composeの
+ヘルスチェック再試行回数に従ってunhealthyになります。
 
-Postgres 18のデータは `postgres18-data` ボリュームへ保存され、外部公開しません。
-カフェデータの正本はまだ `level-bot` 側です。この新DBへのデータコピーや旧DBの削除は
-自動実行しません。
+カフェデータの正本はまだ `level-bot` 側です。未使用の空DBは置かず、実データの移行方式が
+確定した段階でマイグレーションと一緒に追加します。
 
 ## Resource defaults
 
-- Bot: 256 MB / 0.75 CPU
+- Bot: 320 MB / 0.75 CPU
 - API: 192 MB / 0.50 CPU
-- PostgreSQL: 192 MB / 0.50 CPU
 
 必要ならCoolify Variablesの `*_MEMORY_LIMIT` / `*_CPUS` で上書きできます。

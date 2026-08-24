@@ -1,16 +1,13 @@
-"""Internal health API for Coolify and future public Cafe routes."""
+"""Health and image API for Coolify and Cafe clients."""
 
 from __future__ import annotations
 
-import logging
-
 from fastapi import FastAPI, HTTPException
-from sqlalchemy.exc import SQLAlchemyError
+from fastapi.responses import FileResponse
 
-from cafe_collection import database
-from cafe_collection.config import RuntimeSettings
+from cafe_collection import assets
+from cafe_collection.assets import card_image_path
 
-logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Cafe Collection API",
     docs_url=None,
@@ -21,17 +18,29 @@ app = FastAPI(
 
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
-    """Process liveness; does not depend on PostgreSQL."""
+    """Process liveness; does not depend on external services."""
     return {"status": "ok"}
 
 
 @app.get("/readyz")
 async def readyz() -> dict[str, str]:
-    """Deployment readiness including PostgreSQL connectivity."""
-    settings = RuntimeSettings()
-    try:
-        await database.ping_database(settings.database_url)
-    except SQLAlchemyError as exc:
-        logger.warning("Database readiness check failed: %s", exc)
-        raise HTTPException(status_code=503, detail="database unavailable") from exc
+    """Deployment readiness for the locally served immutable image bundle."""
+    if not assets.asset_bundle_ready():
+        raise HTTPException(status_code=503, detail="image bundle unavailable")
     return {"status": "ready"}
+
+
+@app.get(
+    "/api/v1/public/cafe-collection/cards/{card_key}/image",
+    response_class=FileResponse,
+)
+async def card_image(card_key: str) -> FileResponse:
+    """Serve the same immutable card JPEG bundle as level-bot."""
+    path = card_image_path(card_key)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Card not found")
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )

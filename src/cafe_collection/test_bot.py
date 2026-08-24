@@ -1,4 +1,12 @@
+from pathlib import Path
+from unittest.mock import AsyncMock
+
+import httpx
+import pytest
+
+from cafe_collection.assets import manifest_sha256
 from cafe_collection.bot import CafeCollectionBot, create_bot
+from cafe_collection.level_api import CafeApiClient
 
 
 async def test_create_bot_uses_only_required_intents() -> None:
@@ -6,7 +14,93 @@ async def test_create_bot_uses_only_required_intents() -> None:
     try:
         assert isinstance(bot, CafeCollectionBot)
         assert bot.intents.guilds is True
-        assert bot.intents.members is True
+        assert bot.intents.members is False
         assert bot.intents.message_content is False
     finally:
         await bot.close()
+
+
+async def test_bot_readiness_tracks_discord_connection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "discord.ready"
+    monkeypatch.setenv("BOT_READINESS_FILE", str(marker))
+    level_api_available = True
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        if not level_api_available:
+            return httpx.Response(503)
+        return httpx.Response(
+            200,
+            json={
+                "api_version": 1,
+                "catalog_size": 361,
+                "asset_count": 363,
+                "asset_manifest_sha256": manifest_sha256(),
+            },
+        )
+
+    api = CafeApiClient(
+        "https://level.example.com",
+        "cafe-secret",
+        transport=httpx.MockTransport(handler),
+    )
+    bot = create_bot(api)
+    try:
+        await bot._probe_level_api()
+        assert marker.exists() is False
+
+        await bot.on_ready()
+        assert marker.exists() is True
+
+        level_api_available = False
+        await bot._probe_level_api()
+        assert marker.exists() is False
+
+        level_api_available = True
+        await bot._probe_level_api()
+        assert marker.exists() is True
+
+        await bot.on_disconnect()
+        assert marker.exists() is False
+
+        await bot.on_resumed()
+        assert marker.exists() is True
+    finally:
+        await bot.close()
+
+    assert marker.exists() is False
+
+
+async def test_setup_installs_commands_only_for_matching_api_and_assets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "api_version": 1,
+                "catalog_size": 361,
+                "asset_count": 363,
+                "asset_manifest_sha256": manifest_sha256(),
+            },
+        )
+
+    api = CafeApiClient(
+        "https://level.example.com",
+        "cafe-secret",
+        transport=httpx.MockTransport(handler),
+    )
+    bot = create_bot(api)
+    load_extension = AsyncMock()
+    sync = AsyncMock(return_value=[])
+    monkeypatch.setattr(bot, "load_extension", load_extension)
+    monkeypatch.setattr(bot.tree, "sync", sync)
+    try:
+        await bot.setup_hook()
+    finally:
+        await bot.close()
+
+    load_extension.assert_awaited_once_with("cafe_collection.cog")
+    sync.assert_awaited_once_with()

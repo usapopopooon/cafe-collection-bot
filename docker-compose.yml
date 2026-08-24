@@ -3,31 +3,36 @@ services:
     build: .
     restart: unless-stopped
     init: true
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://cafe:cafe@postgres:5432/cafe_collection
       BOT_ENABLED: ${BOT_ENABLED:-false}
       DISCORD_TOKEN: ${DISCORD_TOKEN:-}
+      LEVEL_BOT_API_BASE_URL: ${LEVEL_BOT_API_BASE_URL:-http://host.docker.internal:8000}
+      LEVEL_BOT_API_TOKEN: ${LEVEL_BOT_API_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     command:
       [
         "sh",
         "-lc",
-        'if [ "$${BOT_ENABLED}" != "true" ]; then echo "bot disabled; set BOT_ENABLED=true only at cutover"; sleep infinity; fi; ./scripts/start-bot.sh',
+        'if [ "$${BOT_ENABLED}" != "true" ]; then echo "bot disabled; enable after level-bot Cafe API is ready"; sleep infinity; fi; ./scripts/start-bot.sh',
       ]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'if [ "$${BOT_ENABLED}" != "true" ]; then exit 0; fi; test -f "$${BOT_READINESS_FILE:-/tmp/cafe-collection-bot.ready}"',
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   api:
     build: .
     restart: unless-stopped
     init: true
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://cafe:cafe@postgres:5432/cafe_collection
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LEVEL_BOT_API_TOKEN:
     command: ["./scripts/start-api.sh"]
     ports:
       - "8000:8000"
@@ -43,22 +48,3 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
-
-  postgres:
-    image: postgres:18-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: cafe_collection
-      POSTGRES_USER: cafe
-      POSTGRES_PASSWORD: cafe
-    volumes:
-      - postgres18-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cafe -d cafe_collection"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
-
-volumes:
-  postgres18-data:
