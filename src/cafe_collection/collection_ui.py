@@ -223,8 +223,11 @@ async def show_full_collection(
     await interaction.response.defer(ephemeral=True, thinking=True)
     try:
         collection = await api.collection(actor)
-    except CafeApiError as exc:
-        await send_api_error(interaction, exc)
+    except CafeApiError:
+        await interaction.followup.send(
+            "カード棚の読み込みに失敗しました。時間をおいてもう一度お試しください。",
+            ephemeral=True,
+        )
         return
     rendered: list[tuple[str, int, int, bytes]] = []
     try:

@@ -215,6 +215,20 @@ def test_ranking_panel_and_detail_match_existing_bot_presentation() -> None:
     assert detail.fields[0].value == "🥇 <@2001> — **21/361種**（5.8%）"
 
 
+def test_ranking_detail_ignores_another_users_viewer_entry() -> None:
+    rankings = _rankings()
+    collection = rankings.categories[0]
+    collection.viewer_entry = _ranking_entry().model_copy(update={"user_id": "9999"})
+
+    detail = build_ranking_detail_embed(
+        rankings,
+        category_key="collection",
+        viewer_id="2001",
+    )
+
+    assert detail.fields[0].value == "🥇 <@2001> — **21/361種**（5.8%）"
+
+
 async def test_ranking_components_match_existing_bot_in_order_and_appearance() -> None:
     view = CafeRankingView(guild_id=123456)
     buttons = [

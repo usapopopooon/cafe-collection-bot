@@ -53,7 +53,7 @@ def _draw_embed(
     draw: CafeDraw,
     *,
     user_id: str,
-    attachment_filename: str,
+    attachment_filename: str | None,
     batch_slot: int | None,
 ) -> discord.Embed:
     colors = {
@@ -102,7 +102,8 @@ def _draw_embed(
         ),
         inline=False,
     )
-    embed.set_image(url=f"attachment://{attachment_filename}")
+    if attachment_filename is not None:
+        embed.set_image(url=f"attachment://{attachment_filename}")
     if draw.rarity == "MYTHIC":
         embed.set_footer(text="🔮 存在しないはずの秘宝がカフェに現れました")
     elif draw.rarity == "UR":
@@ -230,14 +231,22 @@ async def _publish_draw_batch(
         try:
             for draw in batch.draws:
                 image_path = card_image_path(draw.reward_key)
-                if image_path is None or image_path.name != draw.image_filename:
+                image_matches = (
+                    image_path is not None and image_path.name == draw.image_filename
+                )
+                if len(batch.draws) > 1 and not image_matches:
                     raise OSError(f"missing Cafe image for {draw.reward_key}")
                 filename = (
-                    f"{draw.batch_position:02d}-{draw.image_filename}"
-                    if len(batch.draws) > 1
-                    else draw.image_filename
+                    (
+                        f"{draw.batch_position:02d}-{draw.image_filename}"
+                        if len(batch.draws) > 1
+                        else draw.image_filename
+                    )
+                    if image_matches
+                    else None
                 )
-                files.append(discord.File(image_path, filename=filename))
+                if image_path is not None and filename is not None:
+                    files.append(discord.File(image_path, filename=filename))
                 embed = _draw_embed(
                     draw,
                     user_id=batch.user_id,

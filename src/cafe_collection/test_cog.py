@@ -10,9 +10,11 @@ import pytest
 from discord import app_commands
 from discord.ext import commands
 
+from cafe_collection import cog as cog_module
 from cafe_collection import collection_ui as collection_ui_module
 from cafe_collection.cog import (
     CafeCog,
+    CafePanelCollectionButton,
     CafePanelDrawButton,
     CafePanelView,
     DrawConfirmView,
@@ -29,6 +31,7 @@ from cafe_collection.discord_context import actor_from_interaction as _actor
 from cafe_collection.level_api import (
     CafeActor,
     CafeApiClient,
+    CafeApiError,
     CafeAvailability,
     CafeCapabilities,
     CafeCollection,
@@ -37,6 +40,7 @@ from cafe_collection.level_api import (
     CafeDraw,
     CafeDrawBatch,
     CafeMasterySummary,
+    CafeRankings,
     CafeWallet,
 )
 
@@ -381,6 +385,104 @@ async def test_full_collection_wires_actor_and_all_rarity_shelves(
     assert rendered_cards == [selected_card, other_card]
 
 
+async def test_full_collection_uses_existing_bot_error_message() -> None:
+    interaction = _interaction(interaction_id=5005)
+    api = Mock(spec=CafeApiClient)
+    api.authorize = AsyncMock()
+    api.collection = AsyncMock(side_effect=CafeApiError("unavailable"))
+
+    await show_full_collection(interaction, api=cast(CafeApiClient, api))
+
+    send = cast(AsyncMock, interaction.followup.send)
+    send.assert_awaited_once_with(
+        "カード棚の読み込みに失敗しました。時間をおいてもう一度お試しください。",
+        ephemeral=True,
+    )
+
+
+async def test_collection_button_reports_unexpected_loading_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    interaction = _interaction(interaction_id=5006)
+    cast(Any, interaction.client).cafe_api = Mock(spec=CafeApiClient)
+    is_done = cast(Mock, interaction.response.is_done)
+    is_done.return_value = True
+    monkeypatch.setattr(
+        cog_module,
+        "show_full_collection",
+        AsyncMock(side_effect=ValueError("too many embeds")),
+    )
+
+    await CafePanelCollectionButton(guild_id=1001).callback(interaction)
+
+    send = cast(AsyncMock, interaction.followup.send)
+    send.assert_awaited_once_with(
+        "カード棚の読み込みに失敗しました。時間をおいてもう一度お試しください。",
+        ephemeral=True,
+    )
+
+
+async def test_ranking_cache_keeps_viewer_entries_separate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cog_module, "_ranking_cache", {})
+    monkeypatch.setattr(cog_module, "_ranking_viewer_cache", {})
+    monkeypatch.setattr(cog_module, "_ranking_locks", {})
+    rankings_by_user = {
+        user_id: cast(CafeRankings, SimpleNamespace(viewer_id=user_id))
+        for user_id in ("99", "11", "12")
+    }
+    api = Mock(spec=CafeApiClient)
+    api.rankings = AsyncMock(side_effect=lambda actor: rankings_by_user[actor.user_id])
+
+    def actor(user_id: str) -> CafeActor:
+        return CafeActor(
+            guild_id="1001",
+            user_id=user_id,
+            role_ids=[],
+            can_manage_guild=user_id == "99",
+        )
+
+    bot_result = await cog_module._get_cached_rankings(api, actor("99"))
+    first_result = await cog_module._get_cached_rankings(api, actor("11"))
+    second_result = await cog_module._get_cached_rankings(api, actor("12"))
+    repeated_result = await cog_module._get_cached_rankings(api, actor("11"))
+
+    assert bot_result == (rankings_by_user["99"], True)
+    assert first_result == (rankings_by_user["11"], False)
+    assert second_result == (rankings_by_user["12"], False)
+    assert repeated_result == (rankings_by_user["11"], False)
+    assert api.rankings.await_count == 3
+
+
+async def test_stale_configured_channel_creates_a_bot_owned_replacement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    default_role = Mock(spec=discord.Role)
+    named_channel = Mock(spec=discord.TextChannel)
+    created_channel = Mock(spec=discord.TextChannel)
+    created_channel.overwrites_for = Mock(return_value=discord.PermissionOverwrite())
+    created_channel.set_permissions = AsyncMock()
+    guild = Mock(spec=discord.Guild)
+    guild.default_role = default_role
+    guild.me = None
+    guild.text_channels = [named_channel]
+    guild.get_channel = Mock(return_value=None)
+    guild.create_text_channel = AsyncMock(return_value=created_channel)
+    name_lookup = Mock(return_value=named_channel)
+    monkeypatch.setattr(discord.utils, "get", name_lookup)
+
+    result = await cog_module._find_or_create_channel(
+        cast(discord.Guild, guild),
+        "📒カフェ台帳",
+        "3002",
+    )
+
+    assert result is created_channel
+    name_lookup.assert_not_called()
+    guild.create_text_channel.assert_awaited_once()
+
+
 async def test_panel_draw_uses_distinct_component_id_and_interaction_id() -> None:
     requests: list[tuple[str, dict[str, Any]]] = []
 
@@ -472,6 +574,13 @@ def test_cafe_command_group_exposes_user_and_admin_feature_parity() -> None:
         "access-role",
         "protect",
     }
+    assert [command.name for command in cafe_collection.commands] == [
+        "access-role",
+        "setup",
+        "leaderboard-panel",
+        "stats",
+        "protect",
+    ]
     assert {
         command.name: command.description for command in cafe_collection.commands
     } == {

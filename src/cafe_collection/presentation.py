@@ -268,7 +268,11 @@ def build_ranking_detail_embed(
     )
     viewer = (
         category.viewer_entry
-        if category is not None and category.viewer_entry is not None
+        if (
+            category is not None
+            and category.viewer_entry is not None
+            and category.viewer_entry.user_id == viewer_id
+        )
         else next((entry for entry in entries if entry.user_id == viewer_id), None)
     )
     embed.add_field(

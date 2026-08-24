@@ -12,7 +12,7 @@ import pytest
 from discord.ext import commands
 
 from cafe_collection import ledger
-from cafe_collection.level_api import CafeApiClient
+from cafe_collection.level_api import CafeApiClient, CafeDraw, CafeLedgerDrawBatch
 
 
 class _Message:
@@ -161,3 +161,44 @@ async def test_new_bot_posts_and_recovers_its_own_draw_and_redemption_ledger(
         str(ledger._notification_nonce("draw-mention", "one-transaction")),
         str(ledger._notification_nonce("redemption", "one-redemption")),
     }
+
+
+async def test_single_draw_without_an_image_still_reaches_the_ledger(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ledger, "card_image_path", lambda _reward_key: None)
+    channel = _Channel(bot_user_id=9001)
+    batch = CafeLedgerDrawBatch(
+        event_id="missing-image",
+        user_id="2001",
+        created_at=datetime(2026, 8, 24, 1, 0, tzinfo=UTC),
+        draws=[
+            CafeDraw(
+                event_id="missing-image",
+                batch_position=1,
+                reward_key="missing-card",
+                reward_name="画像なしカード",
+                reward_description="説明",
+                rarity="C",
+                image_filename="missing-card.jpg",
+                draw_type="free",
+                cost_xp=0,
+                reward_xp=10,
+                exchange_xp=5,
+                was_duplicate=True,
+                owned_count=2,
+                collected_count=1,
+            )
+        ],
+    )
+
+    message_id = await ledger._publish_draw_batch(
+        cast(discord.TextChannel, channel),
+        bot_user_id=9001,
+        batch=batch,
+    )
+
+    assert message_id == "7000"
+    assert len(channel.messages) == 1
+    assert channel.attachment_filenames[0] == []
+    assert channel.messages[0].embeds[0].image.url is None

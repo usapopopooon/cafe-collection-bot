@@ -60,6 +60,7 @@ COUNTER_NAME = "☕️カフェカウンター"
 LEDGER_NAME = "📒カフェ台帳"
 _setup_locks: dict[int, asyncio.Lock] = {}
 _ranking_cache: dict[int, tuple[CafeRankings, float]] = {}
+_ranking_viewer_cache: dict[tuple[int, str], tuple[CafeRankings, float]] = {}
 _ranking_locks: dict[int, asyncio.Lock] = {}
 RANKING_CACHE_SECONDS = 5 * 60.0
 
@@ -69,18 +70,40 @@ async def _get_cached_rankings(
     actor: CafeActor,
 ) -> tuple[CafeRankings, bool]:
     guild_id = int(actor.guild_id)
+    viewer_key = (guild_id, actor.user_id)
     now = monotonic()
-    cached = _ranking_cache.get(guild_id)
-    if cached is not None and now - cached[1] < RANKING_CACHE_SECONDS:
-        return cached[0], False
+    public_cached = _ranking_cache.get(guild_id)
+    viewer_cached = _ranking_viewer_cache.get(viewer_key)
+    public_is_fresh = (
+        public_cached is not None and now - public_cached[1] < RANKING_CACHE_SECONDS
+    )
+    viewer_is_fresh = (
+        viewer_cached is not None and now - viewer_cached[1] < RANKING_CACHE_SECONDS
+    )
+    if public_is_fresh and viewer_is_fresh:
+        assert viewer_cached is not None
+        return viewer_cached[0], False
     lock = _ranking_locks.setdefault(guild_id, asyncio.Lock())
     async with lock:
-        cached = _ranking_cache.get(guild_id)
-        if cached is not None and now - cached[1] < RANKING_CACHE_SECONDS:
-            return cached[0], False
+        now = monotonic()
+        public_cached = _ranking_cache.get(guild_id)
+        viewer_cached = _ranking_viewer_cache.get(viewer_key)
+        public_is_fresh = (
+            public_cached is not None and now - public_cached[1] < RANKING_CACHE_SECONDS
+        )
+        viewer_is_fresh = (
+            viewer_cached is not None and now - viewer_cached[1] < RANKING_CACHE_SECONDS
+        )
+        if public_is_fresh and viewer_is_fresh:
+            assert viewer_cached is not None
+            return viewer_cached[0], False
         rankings = await api.rankings(actor)
-        _ranking_cache[guild_id] = (rankings, now)
-        return rankings, True
+        if not public_is_fresh:
+            for key in [key for key in _ranking_viewer_cache if key[0] == guild_id]:
+                _ranking_viewer_cache.pop(key, None)
+            _ranking_cache[guild_id] = (rankings, now)
+        _ranking_viewer_cache[viewer_key] = (rankings, now)
+        return rankings, not public_is_fresh
 
 
 async def _publish_configured_ledger(
@@ -533,7 +556,24 @@ class CafePanelCollectionButton(
                 "このサーバーでは利用できません。", ephemeral=True
             )
             return
-        await show_full_collection(interaction, api=api)
+        try:
+            await show_full_collection(interaction, api=api)
+        except Exception:
+            logger.exception(
+                "Failed to show Cafe collection for guild=%s user=%s",
+                self.guild_id,
+                interaction.user.id,
+            )
+            if interaction.response.is_done():
+                await interaction.followup.send(
+                    "カード棚の読み込みに失敗しました。時間をおいてもう一度お試しください。",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    "カード棚の読み込みに失敗しました。時間をおいてもう一度お試しください。",
+                    ephemeral=True,
+                )
 
 
 class CafePanelBalanceButton(
@@ -753,11 +793,9 @@ async def _find_or_create_channel(
     configured = (
         guild.get_channel(int(configured_id)) if configured_id is not None else None
     )
-    existing = (
-        configured
-        if isinstance(configured, discord.TextChannel)
-        else discord.utils.get(guild.text_channels, name=name)
-    )
+    existing = configured if isinstance(configured, discord.TextChannel) else None
+    if existing is None and configured_id is None:
+        existing = discord.utils.get(guild.text_channels, name=name)
     me = guild.me
     overwrites: dict[
         discord.Role | discord.Member | discord.Object,
@@ -1074,91 +1112,6 @@ class CafeCog(commands.Cog):
             for _, _, card in ranked[:25]
         ]
 
-    @cafe_collection_group.command(
-        name="protect",
-        description="名前検索で所持カードの保護／解除を切り替える",
-    )
-    @app_commands.describe(card="カード名を入力すると所持カードが候補表示されます")
-    @app_commands.autocomplete(card=protection_autocomplete)
-    async def protect(self, interaction: discord.Interaction, card: str) -> None:
-        actor = _actor(interaction)
-        if actor is None:
-            await interaction.response.send_message(
-                "サーバー内で実行してください。", ephemeral=True
-            )
-            return
-        if not await _ensure_feature_access(interaction, self.api, actor):
-            return
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        try:
-            collection = await self.api.collection(actor)
-            normalized = _normalized_card_search(card)
-            matches = [
-                item
-                for item in collection.cards
-                if item.count > 0
-                and (
-                    item.key == card or _normalized_card_search(item.name) == normalized
-                )
-            ]
-            selected = matches[0] if len(matches) == 1 else None
-            if selected is None:
-                await interaction.followup.send(
-                    "そのカードは現在所持していません。カード欄の候補から選び直してください。",
-                    ephemeral=True,
-                )
-                return
-            result = await self.api.set_protection(
-                actor,
-                reward_key=selected.key,
-                protected=not selected.is_protected,
-            )
-        except CafeApiError as exc:
-            await _send_api_error(interaction, exc)
-            return
-        if result.status != "updated":
-            await interaction.followup.send(
-                "所持状態が変わったため設定できませんでした。もう一度お試しください。",
-                ephemeral=True,
-            )
-            return
-        await interaction.followup.send(
-            (
-                f"🔒 **{result.reward_name}** を保護しました。"
-                "今後のXP・メダル交換から除外します。"
-                if result.protected
-                else f"🔓 **{result.reward_name}** の保護を解除しました。"
-            ),
-            ephemeral=True,
-        )
-
-    @cafe_collection_group.command(
-        name="stats", description="利用状況とXP収支を管理者だけに表示"
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def stats(self, interaction: discord.Interaction) -> None:
-        actor = _actor(interaction)
-        if actor is None:
-            await interaction.response.send_message(
-                "サーバー内で実行してください。", ephemeral=True
-            )
-            return
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        try:
-            analytics = await self.api.analytics(actor)
-            capabilities = await self.api.capabilities()
-        except CafeApiError as exc:
-            await _send_api_error(interaction, exc)
-            return
-        await interaction.followup.send(
-            embed=build_analytics_embed(
-                analytics,
-                catalog_size=capabilities.catalog_size,
-            ),
-            ephemeral=True,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-
     async def _access_role(
         self,
         interaction: discord.Interaction,
@@ -1327,6 +1280,91 @@ class CafeCog(commands.Cog):
             f"ランキングパネルを {channel.mention} に投稿・更新しました。",
             ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    @cafe_collection_group.command(
+        name="stats", description="利用状況とXP収支を管理者だけに表示"
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def stats(self, interaction: discord.Interaction) -> None:
+        actor = _actor(interaction)
+        if actor is None:
+            await interaction.response.send_message(
+                "サーバー内で実行してください。", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            analytics = await self.api.analytics(actor)
+            capabilities = await self.api.capabilities()
+        except CafeApiError as exc:
+            await _send_api_error(interaction, exc)
+            return
+        await interaction.followup.send(
+            embed=build_analytics_embed(
+                analytics,
+                catalog_size=capabilities.catalog_size,
+            ),
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    @cafe_collection_group.command(
+        name="protect",
+        description="名前検索で所持カードの保護／解除を切り替える",
+    )
+    @app_commands.describe(card="カード名を入力すると所持カードが候補表示されます")
+    @app_commands.autocomplete(card=protection_autocomplete)
+    async def protect(self, interaction: discord.Interaction, card: str) -> None:
+        actor = _actor(interaction)
+        if actor is None:
+            await interaction.response.send_message(
+                "サーバー内で実行してください。", ephemeral=True
+            )
+            return
+        if not await _ensure_feature_access(interaction, self.api, actor):
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            collection = await self.api.collection(actor)
+            normalized = _normalized_card_search(card)
+            matches = [
+                item
+                for item in collection.cards
+                if item.count > 0
+                and (
+                    item.key == card or _normalized_card_search(item.name) == normalized
+                )
+            ]
+            selected = matches[0] if len(matches) == 1 else None
+            if selected is None:
+                await interaction.followup.send(
+                    "そのカードは現在所持していません。カード欄の候補から選び直してください。",
+                    ephemeral=True,
+                )
+                return
+            result = await self.api.set_protection(
+                actor,
+                reward_key=selected.key,
+                protected=not selected.is_protected,
+            )
+        except CafeApiError as exc:
+            await _send_api_error(interaction, exc)
+            return
+        if result.status != "updated":
+            await interaction.followup.send(
+                "所持状態が変わったため設定できませんでした。もう一度お試しください。",
+                ephemeral=True,
+            )
+            return
+        await interaction.followup.send(
+            (
+                f"🔒 **{result.reward_name}** を保護しました。"
+                "今後のXP・メダル交換から除外します。"
+                if result.protected
+                else f"🔓 **{result.reward_name}** の保護を解除しました。"
+            ),
+            ephemeral=True,
         )
 
 
