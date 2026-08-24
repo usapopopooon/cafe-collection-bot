@@ -70,7 +70,7 @@ async def test_public_data_routes_preserve_level_bot_contract() -> None:
             return httpx.Response(
                 200,
                 json={
-                    "total_cards": 373,
+                    "total_cards": 433,
                     "cards": [
                         {
                             "key": "spent-tea",
@@ -131,7 +131,7 @@ async def test_public_api_allows_site_origin_with_shared_public_jwt() -> None:
     upstream = PublicCafeApiClient(
         "https://level.example.com",
         transport=httpx.MockTransport(
-            lambda _request: httpx.Response(200, json={"total_cards": 373})
+            lambda _request: httpx.Response(200, json={"total_cards": 433})
         ),
     )
     test_app = create_app(
