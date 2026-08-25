@@ -99,8 +99,8 @@ def _wallet(available_xp: int = 100) -> CafeWallet:
 def _capabilities() -> CafeCapabilities:
     return CafeCapabilities(
         api_version=4,
-        catalog_size=433,
-        asset_count=435,
+        catalog_size=463,
+        asset_count=465,
         asset_manifest_sha256="test",
         paid_draw_cost_xp=20,
         hourly_draw_limit=10,

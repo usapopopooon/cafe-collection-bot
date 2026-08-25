@@ -15,8 +15,8 @@ from cafe_collection.level_api import CafeApiClient, CafeApiError, CafeCapabilit
 
 logger = logging.getLogger(__name__)
 DEFAULT_READINESS_FILE = "/tmp/cafe-collection-bot.ready"
-EXPECTED_CATALOG_SIZE = 433
-EXPECTED_ASSET_COUNT = 435
+EXPECTED_CATALOG_SIZE = 463
+EXPECTED_ASSET_COUNT = 465
 
 
 def readiness_file() -> Path:
