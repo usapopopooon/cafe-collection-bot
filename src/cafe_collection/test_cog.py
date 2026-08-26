@@ -107,8 +107,8 @@ def _wallet(available_xp: int = 100) -> CafeWallet:
 def _capabilities() -> CafeCapabilities:
     return CafeCapabilities(
         api_version=4,
-        catalog_size=463,
-        asset_count=465,
+        catalog_size=493,
+        asset_count=495,
         asset_manifest_sha256="test",
         paid_draw_cost_xp=20,
         hourly_draw_limit=10,
@@ -133,7 +133,7 @@ def _capabilities() -> CafeCapabilities:
             "MYTHIC": 1500,
         },
         ranking_category_totals={},
-        set_count=50,
+        set_count=53,
     )
 
 

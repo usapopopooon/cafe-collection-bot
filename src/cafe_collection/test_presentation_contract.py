@@ -20,8 +20,8 @@ from cafe_collection.presentation import (
 def _capabilities() -> CafeCapabilities:
     return CafeCapabilities(
         api_version=4,
-        catalog_size=463,
-        asset_count=465,
+        catalog_size=493,
+        asset_count=495,
         asset_manifest_sha256="test",
         paid_draw_cost_xp=20,
         hourly_draw_limit=10,
@@ -46,7 +46,7 @@ def _capabilities() -> CafeCapabilities:
             "MYTHIC": 1500,
         },
         ranking_category_totals={},
-        set_count=50,
+        set_count=53,
     )
 
 
@@ -102,8 +102,8 @@ def _rankings() -> CafeRankings:
         participant_count=1,
         total_draws=21,
         captured_at=datetime(2026, 8, 17, 9, 30, tzinfo=UTC),
-        category_totals=dict.fromkeys(keys, 463),
-        set_count=50,
+        category_totals=dict.fromkeys(keys, 493),
+        set_count=53,
         categories=[
             CafeRankingCategory(
                 key=key,
@@ -202,17 +202,17 @@ def test_ranking_panel_and_detail_match_existing_bot_presentation() -> None:
         "🍰 甘味通 TOP 3",
         "🏺 食文化探訪 TOP 3",
     ]
-    assert panel.fields[0].value == "🥇 <@2001> — **21/463種**（4.5%）"
+    assert panel.fields[0].value == "🥇 <@2001> — **21/493種**（4.3%）"
     assert panel.fields[4].value == "UR・幻の収集記録はまだありません。"
     assert panel.footer.text == (
         "ボタン操作時に更新 · 集計は最大5分間キャッシュ · 最終集計 08/17 18:30 JST"
     )
     assert detail.title == "📚 図鑑ランキング"
     assert detail.description == (
-        "異なるカードの収集種類数を競います。\n\n🥇 <@2001> — **21/463種**（4.5%）"
+        "異なるカードの収集種類数を競います。\n\n🥇 <@2001> — **21/493種**（4.3%）"
     )
     assert detail.fields[0].name == "あなたの順位"
-    assert detail.fields[0].value == "🥇 <@2001> — **21/463種**（4.5%）"
+    assert detail.fields[0].value == "🥇 <@2001> — **21/493種**（4.3%）"
 
 
 def test_ranking_detail_ignores_another_users_viewer_entry() -> None:
@@ -226,7 +226,7 @@ def test_ranking_detail_ignores_another_users_viewer_entry() -> None:
         viewer_id="2001",
     )
 
-    assert detail.fields[0].value == "🥇 <@2001> — **21/463種**（4.5%）"
+    assert detail.fields[0].value == "🥇 <@2001> — **21/493種**（4.3%）"
 
 
 async def test_ranking_components_match_existing_bot_in_order_and_appearance() -> None:

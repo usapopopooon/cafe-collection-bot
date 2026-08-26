@@ -35,8 +35,8 @@ async def test_bot_readiness_tracks_discord_connection(
             200,
             json={
                 "api_version": 4,
-                "catalog_size": 463,
-                "asset_count": 465,
+                "catalog_size": 493,
+                "asset_count": 495,
                 "asset_manifest_sha256": manifest_sha256(),
                 "paid_draw_cost_xp": 20,
                 "hourly_draw_limit": 10,
@@ -61,7 +61,7 @@ async def test_bot_readiness_tracks_discord_connection(
                     "MYTHIC": 1500,
                 },
                 "ranking_category_totals": {},
-                "set_count": 50,
+                "set_count": 53,
             },
         )
 
@@ -105,8 +105,8 @@ async def test_setup_installs_commands_only_for_matching_api_and_assets(
             200,
             json={
                 "api_version": 4,
-                "catalog_size": 463,
-                "asset_count": 465,
+                "catalog_size": 493,
+                "asset_count": 495,
                 "asset_manifest_sha256": manifest_sha256(),
                 "paid_draw_cost_xp": 20,
                 "hourly_draw_limit": 10,
@@ -131,7 +131,7 @@ async def test_setup_installs_commands_only_for_matching_api_and_assets(
                     "MYTHIC": 1500,
                 },
                 "ranking_category_totals": {},
-                "set_count": 50,
+                "set_count": 53,
             },
         )
 
