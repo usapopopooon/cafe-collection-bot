@@ -33,13 +33,55 @@ Action = Literal["favorite", "redeem_xp", "protect"]
 RedemptionKind = Literal["xp", "medals"]
 logger = logging.getLogger(__name__)
 DEFAULT_EMBED_COLOR = 0x5865F2
+DISCORD_EMBED_TITLE_LIMIT = 256
+DISCORD_EMBED_DESCRIPTION_LIMIT = 4096
+DISCORD_EMBED_FIELD_NAME_LIMIT = 256
+DISCORD_EMBED_FIELD_VALUE_LIMIT = 1024
+DISCORD_EMBED_FOOTER_LIMIT = 2048
+DISCORD_EMBED_TOTAL_LIMIT = 6000
+EMBED_SAFETY_MARGIN = 256
+EMBED_DESCRIPTION_BUDGET = DISCORD_EMBED_DESCRIPTION_LIMIT - EMBED_SAFETY_MARGIN
+EMBED_TOTAL_BUDGET = DISCORD_EMBED_TOTAL_LIMIT - EMBED_SAFETY_MARGIN
 
 
 def _rarity_label(value: str) -> str:
     return RARITY_LABELS.get(value, value)
 
 
-def _collection_rarity_description(cards: list[CafeCollectionCard], rarity: str) -> str:
+def _truncate_text(text: str, limit: int, *, suffix: str = "…") -> str:
+    if len(text) <= limit:
+        return text
+    if limit <= len(suffix):
+        return suffix[:limit]
+    return text[: limit - len(suffix)] + suffix
+
+
+def _bounded_lines(lines: list[str], *, limit: int) -> str:
+    full_text = "\n".join(lines)
+    if len(full_text) <= limit:
+        return full_text
+
+    selected: list[str] = []
+    for line in lines:
+        candidate = [*selected, line]
+        omitted = len(lines) - len(candidate)
+        suffix = f"\n…ほか{omitted}種（棚画像で確認できます）" if omitted else ""
+        if len("\n".join(candidate)) + len(suffix) > limit:
+            break
+        selected.append(line)
+
+    omitted = len(lines) - len(selected)
+    suffix = f"…ほか{omitted}種（棚画像で確認できます）"
+    result = "\n".join([*selected, suffix]) if selected else suffix
+    return _truncate_text(result, limit)
+
+
+def _collection_rarity_description(
+    cards: list[CafeCollectionCard],
+    rarity: str,
+    *,
+    limit: int | None = None,
+) -> str:
     lines = []
     for card in cards:
         if card.rarity != rarity or card.count <= 0:
@@ -59,7 +101,84 @@ def _collection_rarity_description(cards: list[CafeCollectionCard], rarity: str)
             else ""
         )
         lines.append(f"**{card.name}** ×{card.count}{state}{mastery}")
-    return "\n".join(lines) if lines else "このレアリティはまだ未収集です。"
+    if not lines:
+        return "このレアリティはまだ未収集です。"
+    if limit is None:
+        return "\n".join(lines)
+    return _bounded_lines(lines, limit=limit)
+
+
+def _fit_embed_to_discord_limits(embed: discord.Embed) -> discord.Embed:
+    """Keep a generated embed sendable even if future catalog data grows."""
+    if embed.title is not None:
+        embed.title = _truncate_text(embed.title, DISCORD_EMBED_TITLE_LIMIT)
+    if embed.description is not None:
+        embed.description = _truncate_text(embed.description, EMBED_DESCRIPTION_BUDGET)
+    for index, field in enumerate(embed.fields):
+        embed.set_field_at(
+            index,
+            name=_truncate_text(str(field.name), DISCORD_EMBED_FIELD_NAME_LIMIT),
+            value=_truncate_text(str(field.value), DISCORD_EMBED_FIELD_VALUE_LIMIT),
+            inline=field.inline,
+        )
+    if embed.footer.text is not None:
+        embed.set_footer(
+            text=_truncate_text(str(embed.footer.text), DISCORD_EMBED_FOOTER_LIMIT)
+        )
+
+    overflow = len(embed) - EMBED_TOTAL_BUDGET
+    if overflow <= 0:
+        return embed
+
+    if embed.description is not None:
+        description = embed.description
+        target = max(0, len(description) - overflow)
+        embed.description = _truncate_text(description, target) or None
+        overflow = len(embed) - EMBED_TOTAL_BUDGET
+
+    for index in reversed(range(len(embed.fields))):
+        if overflow <= 0:
+            break
+        field = embed.fields[index]
+        value = str(field.value)
+        target = max(1, len(value) - overflow)
+        embed.set_field_at(
+            index,
+            name=field.name,
+            value=_truncate_text(value, target),
+            inline=field.inline,
+        )
+        overflow = len(embed) - EMBED_TOTAL_BUDGET
+
+    if overflow > 0 and embed.footer.text is not None:
+        footer = str(embed.footer.text)
+        target = max(0, len(footer) - overflow)
+        if target:
+            embed.set_footer(text=_truncate_text(footer, target))
+        else:
+            embed.remove_footer()
+        overflow = len(embed) - EMBED_TOTAL_BUDGET
+
+    for index in reversed(range(len(embed.fields))):
+        if overflow <= 0:
+            break
+        field = embed.fields[index]
+        name = str(field.name)
+        target = max(1, len(name) - overflow)
+        embed.set_field_at(
+            index,
+            name=_truncate_text(name, target),
+            value=field.value,
+            inline=field.inline,
+        )
+        overflow = len(embed) - EMBED_TOTAL_BUDGET
+
+    if overflow > 0 and embed.title is not None:
+        title = embed.title
+        target = max(0, len(title) - overflow)
+        embed.title = _truncate_text(title, target) or None
+
+    return embed
 
 
 def _actor_api(
@@ -111,15 +230,21 @@ def _collection_summary(
             f"{sum(card.count > 0 for card in cards)}/{len(cards)}"
         )
     cosmetic = collection.active_cosmetic
+    progress_description = (
+        f"**レアリティ別収集**\n{' / '.join(progress)}\n\n**N 所持カード**\n"
+    )
     embed = discord.Embed(
         title=(
             f"{cosmetic.decoration if cosmetic is not None else '🗃️'} "
             f"{display_name} のカード棚"
         ),
         description=(
-            f"**レアリティ別収集**\n{' / '.join(progress)}\n\n"
-            f"**N 所持カード**\n"
-            f"{_collection_rarity_description(collection.cards, 'C')}"
+            progress_description
+            + _collection_rarity_description(
+                collection.cards,
+                "C",
+                limit=EMBED_DESCRIPTION_BUDGET - len(progress_description),
+            )
             if owned
             else "まだカードはありません。"
         ),
@@ -204,7 +329,7 @@ def _collection_summary(
             "最初の1枚と保護カードは残ります（交換対象は未保護の2枚目以降）"
         )
     )
-    return embed
+    return _fit_embed_to_discord_limits(embed)
 
 
 async def show_full_collection(
@@ -276,6 +401,7 @@ async def show_full_collection(
                 )
             )
             embeds.append(embed)
+        embeds = [_fit_embed_to_discord_limits(embed) for embed in embeds]
         view = CollectionActionsView(
             guild_id=int(actor.guild_id),
             user_id=int(actor.user_id),

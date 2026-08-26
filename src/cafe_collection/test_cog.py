@@ -22,6 +22,14 @@ from cafe_collection.cog import (
     _send_draw_result,
 )
 from cafe_collection.collection_ui import (
+    DISCORD_EMBED_DESCRIPTION_LIMIT,
+    DISCORD_EMBED_FIELD_NAME_LIMIT,
+    DISCORD_EMBED_FIELD_VALUE_LIMIT,
+    DISCORD_EMBED_FOOTER_LIMIT,
+    DISCORD_EMBED_TITLE_LIMIT,
+    DISCORD_EMBED_TOTAL_LIMIT,
+    EMBED_DESCRIPTION_BUDGET,
+    EMBED_TOTAL_BUDGET,
     CollectionActionsView,
     RedemptionConfirmView,
     _collection_summary,
@@ -383,6 +391,64 @@ async def test_full_collection_wires_actor_and_all_rarity_shelves(
 
     api.collection.assert_awaited_once_with(actor)
     assert rendered_cards == [selected_card, other_card]
+
+
+async def test_full_collection_keeps_large_shelf_embeds_within_discord_limits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    interaction = _interaction(interaction_id=5007)
+    cards = [
+        CafeCollectionCard(
+            key=f"large-shelf-{index}",
+            name=f"とても長い名前のカフェカードその{index:03d}",
+            rarity="C",
+            description="説明",
+            image_filename=f"large-shelf-{index}.jpg",
+            count=3,
+            redeemable_count=2,
+            lifetime_count=3,
+            is_protected=True,
+            mastery_name="なじみ",
+            mastery_emoji="☕",
+        )
+        for index in range(250)
+    ]
+    collection = CafeCollection(
+        cards=cards,
+        endgame_pity_active=False,
+        endgame_pity_duplicate_draws=100,
+        mastery_tiers=[],
+    )
+    api = Mock(spec=CafeApiClient)
+    api.authorize = AsyncMock()
+    api.collection = AsyncMock(return_value=collection)
+
+    monkeypatch.setattr(
+        collection_ui_module,
+        "render_collection_pages",
+        lambda rendered_cards: (b"\xff\xd8\xff\xd9",) if rendered_cards else (),
+    )
+
+    await show_full_collection(interaction, api=cast(CafeApiClient, api))
+
+    send = cast(AsyncMock, interaction.followup.send)
+    assert send.await_count == 1
+    assert send.await_args is not None
+    sent_embeds = send.await_args.kwargs["embeds"]
+    assert sent_embeds[0].description is not None
+    assert "棚画像で確認できます" in sent_embeds[0].description
+    for embed in sent_embeds:
+        assert len(embed.title or "") <= DISCORD_EMBED_TITLE_LIMIT
+        assert len(embed.description or "") <= DISCORD_EMBED_DESCRIPTION_LIMIT
+        assert len(embed.footer.text or "") <= DISCORD_EMBED_FOOTER_LIMIT
+        assert len(embed) <= DISCORD_EMBED_TOTAL_LIMIT
+        assert len(embed.description or "") <= EMBED_DESCRIPTION_BUDGET
+        assert len(embed) <= EMBED_TOTAL_BUDGET
+        assert all(
+            len(field.name) <= DISCORD_EMBED_FIELD_NAME_LIMIT
+            and len(field.value) <= DISCORD_EMBED_FIELD_VALUE_LIMIT
+            for field in embed.fields
+        )
 
 
 async def test_full_collection_uses_existing_bot_error_message() -> None:
