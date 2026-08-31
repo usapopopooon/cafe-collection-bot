@@ -17,6 +17,10 @@ class CafeApiError(RuntimeError):
     """Raised when level-bot cannot complete a Cafe operation."""
 
 
+class CafeApiUnavailable(CafeApiError):
+    """Raised when level-bot is temporarily unreachable or unavailable."""
+
+
 class CafeAccessDenied(CafeApiError):
     """Raised when level-bot rejects the member's configured access roles."""
 
@@ -294,7 +298,7 @@ class CafeApiClient:
         try:
             response = await self._client.request(method, path, **kwargs)
         except httpx.HTTPError as exc:
-            raise CafeApiError("level-bot APIへ接続できません") from exc
+            raise CafeApiUnavailable("level-bot APIへ接続できません") from exc
         if response.status_code == 403:
             role_ids: list[str] = []
             try:
@@ -316,7 +320,12 @@ class CafeApiClient:
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise CafeApiError(
+            error_type = (
+                CafeApiUnavailable
+                if response.status_code == 429 or response.status_code >= 500
+                else CafeApiError
+            )
+            raise error_type(
                 f"level-bot APIがエラーを返しました ({response.status_code})"
             ) from exc
         try:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -11,12 +12,18 @@ from discord.ext import commands, tasks
 
 from cafe_collection.assets import manifest_sha256
 from cafe_collection.ledger import publish_pending_for_guild
-from cafe_collection.level_api import CafeApiClient, CafeApiError, CafeCapabilities
+from cafe_collection.level_api import (
+    CafeApiClient,
+    CafeApiError,
+    CafeApiUnavailable,
+    CafeCapabilities,
+)
 
 logger = logging.getLogger(__name__)
 DEFAULT_READINESS_FILE = "/tmp/cafe-collection-bot.ready"
 EXPECTED_CATALOG_SIZE = 493
 EXPECTED_ASSET_COUNT = 495
+STARTUP_API_RETRY_SECONDS = 5.0
 
 
 def readiness_file() -> Path:
@@ -78,6 +85,27 @@ class CafeCollectionBot(commands.Bot):
             self._level_api_ready = True
         self._publish_readiness()
 
+    async def _wait_for_level_api(self) -> None:
+        if self.cafe_api is None:
+            return
+        while True:
+            try:
+                capabilities = await self.cafe_api.capabilities()
+            except CafeApiUnavailable:
+                self._level_api_ready = False
+                self._publish_readiness()
+                logger.warning(
+                    "level-bot Cafe API is temporarily unavailable; "
+                    "retrying in %.0f seconds",
+                    STARTUP_API_RETRY_SECONDS,
+                )
+                await asyncio.sleep(STARTUP_API_RETRY_SECONDS)
+                continue
+            self._validate_capabilities(capabilities)
+            self._level_api_ready = True
+            self._publish_readiness()
+            return
+
     @tasks.loop(seconds=30)
     async def level_api_health_loop(self) -> None:
         """Keep container readiness aligned with the required level-bot API."""
@@ -105,9 +133,7 @@ class CafeCollectionBot(commands.Bot):
         if self.cafe_api is None:
             logger.info("Cafe Collection API client is not configured")
             return
-        capabilities = await self.cafe_api.capabilities()
-        self._validate_capabilities(capabilities)
-        self._level_api_ready = True
+        await self._wait_for_level_api()
         await self.load_extension("cafe_collection.cog")
         synced = await self.tree.sync()
         logger.info("Installed and synced %d Cafe commands", len(synced))

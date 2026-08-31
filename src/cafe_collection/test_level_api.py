@@ -6,6 +6,7 @@ from cafe_collection.level_api import (
     CafeActor,
     CafeApiClient,
     CafeApiError,
+    CafeApiUnavailable,
 )
 
 
@@ -71,6 +72,19 @@ async def test_client_maps_incompatible_response_to_operational_error() -> None:
     )
     try:
         with pytest.raises(CafeApiError, match="バージョンが一致"):
+            await client.capabilities()
+    finally:
+        await client.close()
+
+
+async def test_client_distinguishes_temporarily_unavailable_api() -> None:
+    client = CafeApiClient(
+        "https://level.example.com",
+        "cafe-secret",
+        transport=httpx.MockTransport(lambda _request: httpx.Response(503)),
+    )
+    try:
+        with pytest.raises(CafeApiUnavailable, match="503"):
             await client.capabilities()
     finally:
         await client.close()
