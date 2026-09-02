@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from cafe_collection.assets import ASSET_DIR
 from cafe_collection.collection_image import RARITY_LABELS
@@ -62,7 +62,37 @@ _setup_locks: dict[int, asyncio.Lock] = {}
 _ranking_cache: dict[int, tuple[CafeRankings, float]] = {}
 _ranking_viewer_cache: dict[tuple[int, str], tuple[CafeRankings, float]] = {}
 _ranking_locks: dict[int, asyncio.Lock] = {}
+_ranking_banned_user_ids: dict[int, set[str]] = {}
 RANKING_CACHE_SECONDS = 5 * 60.0
+
+
+def _clear_ranking_cache(guild_id: int) -> None:
+    _ranking_cache.pop(guild_id, None)
+    for key in [key for key in _ranking_viewer_cache if key[0] == guild_id]:
+        _ranking_viewer_cache.pop(key, None)
+
+
+def _without_known_bans(rankings: CafeRankings, guild_id: int) -> CafeRankings:
+    blocked = _ranking_banned_user_ids.get(guild_id, set())
+    if not blocked:
+        return rankings
+    categories = [
+        category.model_copy(
+            update={
+                "entries": [
+                    entry for entry in category.entries if entry.user_id not in blocked
+                ],
+                "viewer_entry": (
+                    None
+                    if category.viewer_entry is not None
+                    and category.viewer_entry.user_id in blocked
+                    else category.viewer_entry
+                ),
+            }
+        )
+        for category in rankings.categories
+    ]
+    return rankings.model_copy(update={"categories": categories})
 
 
 async def _get_cached_rankings(
@@ -82,7 +112,7 @@ async def _get_cached_rankings(
     )
     if public_is_fresh and viewer_is_fresh:
         assert viewer_cached is not None
-        return viewer_cached[0], False
+        return _without_known_bans(viewer_cached[0], guild_id), False
     lock = _ranking_locks.setdefault(guild_id, asyncio.Lock())
     async with lock:
         now = monotonic()
@@ -96,14 +126,13 @@ async def _get_cached_rankings(
         )
         if public_is_fresh and viewer_is_fresh:
             assert viewer_cached is not None
-            return viewer_cached[0], False
+            return _without_known_bans(viewer_cached[0], guild_id), False
         rankings = await api.rankings(actor)
         if not public_is_fresh:
-            for key in [key for key in _ranking_viewer_cache if key[0] == guild_id]:
-                _ranking_viewer_cache.pop(key, None)
+            _clear_ranking_cache(guild_id)
             _ranking_cache[guild_id] = (rankings, now)
         _ranking_viewer_cache[viewer_key] = (rankings, now)
-        return rankings, not public_is_fresh
+        return _without_known_bans(rankings, guild_id), not public_is_fresh
 
 
 async def _publish_configured_ledger(
@@ -856,6 +885,70 @@ class CafeCog(commands.Cog):
         self.bot = bot
         self.api = api
         self._ready_repaired = False
+        self._ranking_refresh_lock = asyncio.Lock()
+
+    async def cog_load(self) -> None:
+        self.ranking_refresh_loop.start()
+
+    async def cog_unload(self) -> None:
+        self.ranking_refresh_loop.cancel()
+
+    async def _refresh_configured_ranking(self, guild: discord.Guild) -> None:
+        if self.bot.user is None:
+            return
+        async with self._ranking_refresh_lock:
+            actor = CafeActor(
+                guild_id=str(guild.id),
+                user_id=str(self.bot.user.id),
+                role_ids=[],
+                can_manage_guild=True,
+            )
+            layout = await self.api.layout(actor)
+            ranking_channel = (
+                guild.get_channel(int(layout.ranking_channel_id))
+                if layout.ranking_channel_id is not None
+                else None
+            )
+            if isinstance(ranking_channel, discord.TextChannel):
+                await self._upsert_ranking(
+                    actor=actor,
+                    guild=guild,
+                    channel=ranking_channel,
+                )
+
+    @commands.Cog.listener()
+    async def on_member_ban(self, guild: discord.Guild, user: discord.User) -> None:
+        _ranking_banned_user_ids.setdefault(guild.id, set()).add(str(user.id))
+        _clear_ranking_cache(guild.id)
+        try:
+            await self._refresh_configured_ranking(guild)
+        except (CafeApiError, discord.HTTPException, OSError):
+            logger.exception("Failed to refresh Cafe ranking after a ban")
+
+    @commands.Cog.listener()
+    async def on_member_unban(self, guild: discord.Guild, user: discord.User) -> None:
+        _ranking_banned_user_ids.setdefault(guild.id, set()).discard(str(user.id))
+        _clear_ranking_cache(guild.id)
+        try:
+            await self._refresh_configured_ranking(guild)
+        except (CafeApiError, discord.HTTPException, OSError):
+            logger.exception("Failed to refresh Cafe ranking after an unban")
+
+    @tasks.loop(minutes=1)
+    async def ranking_refresh_loop(self) -> None:
+        for guild in self.bot.guilds:
+            _clear_ranking_cache(guild.id)
+            try:
+                await self._refresh_configured_ranking(guild)
+            except (CafeApiError, discord.HTTPException, OSError):
+                logger.exception(
+                    "Failed to refresh configured Cafe ranking for guild %s",
+                    guild.id,
+                )
+
+    @ranking_refresh_loop.before_loop
+    async def before_ranking_refresh_loop(self) -> None:
+        await self.bot.wait_until_ready()
 
     @commands.Cog.listener()
     async def on_ready(self) -> None:
@@ -875,18 +968,7 @@ class CafeCog(commands.Cog):
                     guild=guild,
                     require_existing=True,
                 )
-                layout = await self.api.layout(actor)
-                ranking_channel = (
-                    guild.get_channel(int(layout.ranking_channel_id))
-                    if layout.ranking_channel_id is not None
-                    else None
-                )
-                if isinstance(ranking_channel, discord.TextChannel):
-                    await self._upsert_ranking(
-                        actor=actor,
-                        guild=guild,
-                        channel=ranking_channel,
-                    )
+                await self._refresh_configured_ranking(guild)
                 await publish_pending_for_guild(self.bot, self.api, guild)
             except (CafeApiError, discord.HTTPException, OSError):
                 logger.exception("Failed to repair Cafe setup for guild %s", guild.id)

@@ -48,6 +48,8 @@ from cafe_collection.level_api import (
     CafeDraw,
     CafeDrawBatch,
     CafeMasterySummary,
+    CafeRankingCategory,
+    CafeRankingEntry,
     CafeRankings,
     CafeWallet,
 )
@@ -196,6 +198,76 @@ async def test_ready_repairs_the_configured_ranking_panel(
         channel=ranking_channel,
     )
     publish_pending.assert_awaited_once_with(bot, api, guild)
+
+
+async def test_ban_immediately_clears_cache_and_refreshes_the_ranking_panel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cog_module, "_ranking_cache", {1001: (Mock(), 1.0)})
+    monkeypatch.setattr(
+        cog_module,
+        "_ranking_viewer_cache",
+        {(1001, "11"): (Mock(), 1.0)},
+    )
+    monkeypatch.setattr(cog_module, "_ranking_banned_user_ids", {})
+    ranking_channel = Mock(spec=discord.TextChannel)
+    ranking_channel.id = 3003
+    guild = Mock(spec=discord.Guild)
+    guild.id = 1001
+    guild.get_channel.return_value = ranking_channel
+    user = Mock(spec=discord.User)
+    user.id = 11
+    bot_user = SimpleNamespace(id=99)
+    bot = cast(commands.Bot, SimpleNamespace(user=bot_user, guilds=[guild]))
+    api = Mock(spec=CafeApiClient)
+    api.layout = AsyncMock(
+        return_value=SimpleNamespace(ranking_channel_id=str(ranking_channel.id))
+    )
+    cog = CafeCog(bot, cast(CafeApiClient, api))
+    upsert_ranking = AsyncMock()
+    monkeypatch.setattr(cog, "_upsert_ranking", upsert_ranking)
+
+    await cog.on_member_ban(guild, user)
+
+    assert cog_module._ranking_cache == {}
+    assert cog_module._ranking_viewer_cache == {}
+    assert cog_module._ranking_banned_user_ids == {1001: {"11"}}
+    upsert_ranking.assert_awaited_once_with(
+        actor=CafeActor(
+            guild_id="1001",
+            user_id="99",
+            role_ids=[],
+            can_manage_guild=True,
+        ),
+        guild=guild,
+        channel=ranking_channel,
+    )
+
+
+async def test_periodic_refresh_is_the_fallback_when_ban_events_are_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cog_module, "_ranking_cache", {1001: (Mock(), 1.0)})
+    monkeypatch.setattr(
+        cog_module,
+        "_ranking_viewer_cache",
+        {(1001, "11"): (Mock(), 1.0)},
+    )
+    guild = Mock(spec=discord.Guild)
+    guild.id = 1001
+    bot = cast(
+        commands.Bot,
+        SimpleNamespace(user=SimpleNamespace(id=99), guilds=[guild]),
+    )
+    cog = CafeCog(bot, cast(CafeApiClient, Mock(spec=CafeApiClient)))
+    refresh = AsyncMock()
+    monkeypatch.setattr(cog, "_refresh_configured_ranking", refresh)
+
+    await cast(Any, CafeCog.ranking_refresh_loop).coro(cog)
+
+    assert cog_module._ranking_cache == {}
+    assert cog_module._ranking_viewer_cache == {}
+    refresh.assert_awaited_once_with(guild)
 
 
 async def test_draw_result_only_points_to_ledger_without_showing_the_card() -> None:
@@ -519,6 +591,32 @@ async def test_ranking_cache_keeps_viewer_entries_separate(
     assert second_result == (rankings_by_user["12"], False)
     assert repeated_result == (rankings_by_user["11"], False)
     assert api.rankings.await_count == 3
+
+
+def test_known_bans_are_removed_from_cached_ranking_entries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    blocked = CafeRankingEntry.model_construct(user_id="11")
+    visible = CafeRankingEntry.model_construct(user_id="12")
+    rankings = CafeRankings.model_construct(
+        categories=[
+            CafeRankingCategory.model_construct(
+                key="collection",
+                entries=[blocked, visible],
+                viewer_entry=blocked,
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        cog_module,
+        "_ranking_banned_user_ids",
+        {1001: {"11"}},
+    )
+
+    filtered = cog_module._without_known_bans(rankings, 1001)
+
+    assert [entry.user_id for entry in filtered.categories[0].entries] == ["12"]
+    assert filtered.categories[0].viewer_entry is None
 
 
 async def test_stale_configured_channel_creates_a_bot_owned_replacement(

@@ -169,4 +169,5 @@ def create_bot(cafe_api: CafeApiClient | None = None) -> CafeCollectionBot:
     """Create the inactive Cafe Collection bot shell."""
     intents = discord.Intents.default()
     intents.guilds = True
+    intents.moderation = True
     return CafeCollectionBot(intents=intents, cafe_api=cafe_api)

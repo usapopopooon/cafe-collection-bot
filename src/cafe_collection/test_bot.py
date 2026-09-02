@@ -48,6 +48,7 @@ async def test_create_bot_uses_only_required_intents() -> None:
     try:
         assert isinstance(bot, CafeCollectionBot)
         assert bot.intents.guilds is True
+        assert bot.intents.moderation is True
         assert bot.intents.members is False
         assert bot.intents.message_content is False
     finally:
