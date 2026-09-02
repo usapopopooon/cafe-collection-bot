@@ -41,12 +41,23 @@ NEW_CIVILIZATION_IMAGE_NAMES = {
     "celestial-bronze-jue-cordial.jpg",
 }
 
+MODERN_COFFEEHOUSE_IMAGE_NAMES = {
+    "vanilla-cake-pop.jpg",
+    "caramel-ribbon-macchiato.jpg",
+    "white-chocolate-mocha.jpg",
+    "new-york-cheesecake.jpg",
+    "dark-chocolate-chip-frappe.jpg",
+    "matcha-cream-frappe.jpg",
+    "strawberry-cream-frappe.jpg",
+    "red-velvet-cake.jpg",
+}
+
 
 def test_bundled_assets_match_shared_manifest() -> None:
     data = manifest()
 
     assert data["version"] == 1
-    assert len(data["files"]) == 495
+    assert len(data["files"]) == 503
     assert len(manifest_sha256()) == 64
     assert asset_bundle_ready() is True
     assert card_image_path("spent-tea") == ASSET_DIR / "spent-tea.jpg"
@@ -55,6 +66,13 @@ def test_bundled_assets_match_shared_manifest() -> None:
 
 def test_new_civilization_images_match_existing_card_dimensions() -> None:
     for image_name in NEW_CIVILIZATION_IMAGE_NAMES:
+        with Image.open(ASSET_DIR / image_name) as image:
+            assert image.format == "JPEG"
+            assert image.size == (768, 768)
+
+
+def test_modern_coffeehouse_images_match_existing_card_dimensions() -> None:
+    for image_name in MODERN_COFFEEHOUSE_IMAGE_NAMES:
         with Image.open(ASSET_DIR / image_name) as image:
             assert image.format == "JPEG"
             assert image.size == (768, 768)
