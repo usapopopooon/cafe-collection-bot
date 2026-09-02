@@ -13,8 +13,8 @@ from cafe_collection.level_api import CafeApiClient
 def _capabilities() -> dict[str, object]:
     return {
         "api_version": 4,
-        "catalog_size": 493,
-        "asset_count": 495,
+        "catalog_size": 501,
+        "asset_count": 503,
         "asset_manifest_sha256": manifest_sha256(),
         "paid_draw_cost_xp": 20,
         "hourly_draw_limit": 10,
@@ -177,6 +177,30 @@ async def test_setup_does_not_retry_incompatible_level_api(
     monkeypatch.setattr(asyncio, "sleep", sleep)
     try:
         with pytest.raises(RuntimeError, match="Unsupported level-bot Cafe API"):
+            await bot.setup_hook()
+    finally:
+        await bot.close()
+
+    sleep.assert_not_awaited()
+
+
+async def test_setup_rejects_outdated_catalog_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    incompatible = _capabilities()
+    incompatible["catalog_size"] = 493
+    api = CafeApiClient(
+        "https://level.example.com",
+        "cafe-secret",
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, json=incompatible)
+        ),
+    )
+    bot = create_bot(api)
+    sleep = AsyncMock()
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    try:
+        with pytest.raises(RuntimeError, match="Cafe catalog size does not match"):
             await bot.setup_hook()
     finally:
         await bot.close()

@@ -144,6 +144,9 @@ async def test_new_bot_posts_and_recovers_its_own_draw_and_redemption_ledger(
 
     assert len(channel.messages) == 3
     assert channel.messages[0].embeds[0].title == "N｜麦茶"
+    collection_value = channel.messages[0].embeds[0].fields[1].value
+    assert collection_value is not None
+    assert "収集 **0 → 1/501種**" in collection_value
     assert channel.attachment_filenames[0] == ["100-yen-black-tea.jpg"]
     assert channel.messages[1].content == (
         "✨ <@2001>さん、新しいカードを獲得しました！\n"
