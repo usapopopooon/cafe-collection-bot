@@ -62,12 +62,18 @@ COMPLIMENTARY_IMAGE_NAMES = {
     "storefront-sample-cup.jpg",
 }
 
+ANCIENT_JAPANESE_ERA_IMAGE_NAMES = {
+    "jomon-pottery-nut-soup.jpg",
+    "yayoi-jar-red-rice-porridge.jpg",
+    "kofun-keyhole-tomb-cake.jpg",
+}
+
 
 def test_bundled_assets_match_shared_manifest() -> None:
     data = manifest()
 
     assert data["version"] == 1
-    assert len(data["files"]) == 510
+    assert len(data["files"]) == 513
     assert len(manifest_sha256()) == 64
     assert asset_bundle_ready() is True
     assert card_image_path("spent-tea") == ASSET_DIR / "spent-tea.jpg"
@@ -90,6 +96,13 @@ def test_modern_coffeehouse_images_match_existing_card_dimensions() -> None:
 
 def test_complimentary_images_match_existing_card_dimensions() -> None:
     for image_name in COMPLIMENTARY_IMAGE_NAMES:
+        with Image.open(ASSET_DIR / image_name) as image:
+            assert image.format == "JPEG"
+            assert image.size == (768, 768)
+
+
+def test_ancient_japanese_era_images_match_existing_card_dimensions() -> None:
+    for image_name in ANCIENT_JAPANESE_ERA_IMAGE_NAMES:
         with Image.open(ASSET_DIR / image_name) as image:
             assert image.format == "JPEG"
             assert image.size == (768, 768)
