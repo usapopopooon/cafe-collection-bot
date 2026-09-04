@@ -77,12 +77,19 @@ SOVIET_SHORTAGE_IMAGE_NAMES = {
     "scrap-kartoshka-cake.jpg",
 }
 
+READY_MEAL_IMAGE_NAMES = {
+    "erbswurst.jpg",
+    "boston-brown-bread.jpg",
+    "tv-dinner.jpg",
+    "tinned-pie.jpg",
+}
+
 
 def test_bundled_assets_match_shared_manifest() -> None:
     data = manifest()
 
     assert data["version"] == 1
-    assert len(data["files"]) == 519
+    assert len(data["files"]) == 523
     assert len(manifest_sha256()) == 64
     assert asset_bundle_ready() is True
     assert card_image_path("spent-tea") == ASSET_DIR / "spent-tea.jpg"
@@ -119,6 +126,13 @@ def test_ancient_japanese_era_images_match_existing_card_dimensions() -> None:
 
 def test_soviet_shortage_images_match_existing_card_dimensions() -> None:
     for image_name in SOVIET_SHORTAGE_IMAGE_NAMES:
+        with Image.open(ASSET_DIR / image_name) as image:
+            assert image.format == "JPEG"
+            assert image.size == (768, 768)
+
+
+def test_ready_meal_images_match_existing_card_dimensions() -> None:
+    for image_name in READY_MEAL_IMAGE_NAMES:
         with Image.open(ASSET_DIR / image_name) as image:
             assert image.format == "JPEG"
             assert image.size == (768, 768)

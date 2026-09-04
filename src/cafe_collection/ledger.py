@@ -21,7 +21,7 @@ from cafe_collection.level_api import (
 from cafe_collection.presentation import CAFE_COLLECTION_SITE_URL
 
 logger = logging.getLogger(__name__)
-COLLECTION_SIZE = 517
+COLLECTION_SIZE = 521
 RARITY_ORDER = ("C", "UC", "R", "SR", "SSR", "UR", "MYTHIC")
 RARITY_LABELS = {
     "C": "N",

@@ -2,7 +2,7 @@
 
 `level-bot` から分離したカフェ・コレクション専用Discord Botです。
 
-Discordのカフェ機能、カード画像519枚、サイト向け公開API、ヘルスAPI、CI、
+Discordのカフェ機能、カード画像523枚、サイト向け公開API、ヘルスAPI、CI、
 Docker Composeをこのリポジトリが所有します。抽選・カード棚・ランキングは認証付き
 内部APIを通じて、level-botに残る共通の抽選・XP・コレクション状態を利用します。
 
