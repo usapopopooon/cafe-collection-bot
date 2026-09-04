@@ -102,12 +102,20 @@ LATIN_AMERICAN_LOCAL_DRINK_IMAGE_NAMES = {
     "mocochinchi.jpg",
 }
 
+AGE_OF_SAIL_PROVISION_IMAGE_NAMES = {
+    "under-soaked-salt-beef.jpg",
+    "salt-pork-pease-soup.jpg",
+    "ships-hold-dried-cod.jpg",
+    "hardened-voyage-cheese.jpg",
+    "barrel-bottom-ale.jpg",
+}
+
 
 def test_bundled_assets_match_shared_manifest() -> None:
     data = manifest()
 
     assert data["version"] == 1
-    assert len(data["files"]) == 535
+    assert len(data["files"]) == 540
     assert len(manifest_sha256()) == 64
     assert asset_bundle_ready() is True
     assert card_image_path("spent-tea") == ASSET_DIR / "spent-tea.jpg"
@@ -165,6 +173,13 @@ def test_european_local_drink_images_match_existing_card_dimensions() -> None:
 
 def test_latin_american_local_drink_images_match_existing_card_dimensions() -> None:
     for image_name in LATIN_AMERICAN_LOCAL_DRINK_IMAGE_NAMES:
+        with Image.open(ASSET_DIR / image_name) as image:
+            assert image.format == "JPEG"
+            assert image.size == (768, 768)
+
+
+def test_age_of_sail_provision_images_match_existing_card_dimensions() -> None:
+    for image_name in AGE_OF_SAIL_PROVISION_IMAGE_NAMES:
         with Image.open(ASSET_DIR / image_name) as image:
             assert image.format == "JPEG"
             assert image.size == (768, 768)
