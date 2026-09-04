@@ -93,12 +93,21 @@ EUROPEAN_LOCAL_DRINK_IMAGE_NAMES = {
     "cedevita.jpg",
 }
 
+LATIN_AMERICAN_LOCAL_DRINK_IMAGE_NAMES = {
+    "chicha-morada.jpg",
+    "agua-de-jamaica.jpg",
+    "limonada-de-coco.jpg",
+    "cajuina.jpg",
+    "pinolillo.jpg",
+    "mocochinchi.jpg",
+}
+
 
 def test_bundled_assets_match_shared_manifest() -> None:
     data = manifest()
 
     assert data["version"] == 1
-    assert len(data["files"]) == 529
+    assert len(data["files"]) == 535
     assert len(manifest_sha256()) == 64
     assert asset_bundle_ready() is True
     assert card_image_path("spent-tea") == ASSET_DIR / "spent-tea.jpg"
@@ -149,6 +158,13 @@ def test_ready_meal_images_match_existing_card_dimensions() -> None:
 
 def test_european_local_drink_images_match_existing_card_dimensions() -> None:
     for image_name in EUROPEAN_LOCAL_DRINK_IMAGE_NAMES:
+        with Image.open(ASSET_DIR / image_name) as image:
+            assert image.format == "JPEG"
+            assert image.size == (768, 768)
+
+
+def test_latin_american_local_drink_images_match_existing_card_dimensions() -> None:
+    for image_name in LATIN_AMERICAN_LOCAL_DRINK_IMAGE_NAMES:
         with Image.open(ASSET_DIR / image_name) as image:
             assert image.format == "JPEG"
             assert image.size == (768, 768)
