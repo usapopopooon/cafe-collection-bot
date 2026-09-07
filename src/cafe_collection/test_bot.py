@@ -13,8 +13,8 @@ from cafe_collection.level_api import CafeApiClient
 def _capabilities() -> dict[str, object]:
     return {
         "api_version": 4,
-        "catalog_size": 538,
-        "asset_count": 540,
+        "catalog_size": 559,
+        "asset_count": 561,
         "asset_manifest_sha256": manifest_sha256(),
         "paid_draw_cost_xp": 20,
         "hourly_draw_limit": 10,
@@ -39,7 +39,7 @@ def _capabilities() -> dict[str, object]:
             "MYTHIC": 1500,
         },
         "ranking_category_totals": {},
-        "set_count": 55,
+        "set_count": 60,
     }
 
 

@@ -110,12 +110,36 @@ AGE_OF_SAIL_PROVISION_IMAGE_NAMES = {
     "barrel-bottom-ale.jpg",
 }
 
+FIVE_NEW_SERIES_IMAGE_NAMES = {
+    "night-train-paper-cup-coffee.jpg",
+    "waiting-room-aluminum-teapot-tea.jpg",
+    "dry-trolley-sandwich.jpg",
+    "dining-car-consomme.jpg",
+    "sleeper-train-breakfast-toast.jpg",
+    "dining-car-beef-stew.jpg",
+    "first-class-silver-breakfast.jpg",
+    "school-lunch-milmake.jpg",
+    "school-lunch-frozen-mandarin.jpg",
+    "school-lunch-soft-noodles.jpg",
+    "school-lunch-fried-bread.jpg",
+    "depression-water-pie.jpg",
+    "depression-mock-apple-pie.jpg",
+    "hoover-stew.jpg",
+    "soda-fountain-malted-milk.jpg",
+    "soda-fountain-egg-cream.jpg",
+    "soda-fountain-phosphate-soda.jpg",
+    "polar-pemmican.jpg",
+    "polar-condensed-milk-tea.jpg",
+    "polar-compressed-soup.jpg",
+    "polar-frozen-biscuits.jpg",
+}
+
 
 def test_bundled_assets_match_shared_manifest() -> None:
     data = manifest()
 
     assert data["version"] == 1
-    assert len(data["files"]) == 540
+    assert len(data["files"]) == 561
     assert len(manifest_sha256()) == 64
     assert asset_bundle_ready() is True
     assert card_image_path("spent-tea") == ASSET_DIR / "spent-tea.jpg"
@@ -180,6 +204,13 @@ def test_latin_american_local_drink_images_match_existing_card_dimensions() -> N
 
 def test_age_of_sail_provision_images_match_existing_card_dimensions() -> None:
     for image_name in AGE_OF_SAIL_PROVISION_IMAGE_NAMES:
+        with Image.open(ASSET_DIR / image_name) as image:
+            assert image.format == "JPEG"
+            assert image.size == (768, 768)
+
+
+def test_five_new_series_images_match_existing_card_dimensions() -> None:
+    for image_name in FIVE_NEW_SERIES_IMAGE_NAMES:
         with Image.open(ASSET_DIR / image_name) as image:
             assert image.format == "JPEG"
             assert image.size == (768, 768)
