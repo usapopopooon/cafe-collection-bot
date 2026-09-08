@@ -134,12 +134,34 @@ FIVE_NEW_SERIES_IMAGE_NAMES = {
     "polar-frozen-biscuits.jpg",
 }
 
+FOUR_EVERYDAY_PLACE_IMAGE_NAMES = {
+    "vending-paper-cup-coffee.jpg",
+    "vending-glass-bottle-cola.jpg",
+    "vending-tempura-udon.jpg",
+    "vending-boxed-hamburger.jpg",
+    "vending-cup-noodles.jpg",
+    "vending-ham-cheese-toast.jpg",
+    "bathhouse-coffee-milk.jpg",
+    "bathhouse-fruit-milk.jpg",
+    "bathhouse-ramune.jpg",
+    "bathhouse-ice-bar.jpg",
+    "cinema-paper-bag-popcorn.jpg",
+    "cinema-melted-ice-cola.jpg",
+    "cinema-set-nachos.jpg",
+    "cinema-last-hot-dog.jpg",
+    "break-room-stick-coffee.jpg",
+    "break-room-vending-corn-soup.jpg",
+    "break-room-late-night-cup-noodles.jpg",
+    "break-room-gift-manju.jpg",
+    "break-room-named-pudding.jpg",
+}
+
 
 def test_bundled_assets_match_shared_manifest() -> None:
     data = manifest()
 
     assert data["version"] == 1
-    assert len(data["files"]) == 561
+    assert len(data["files"]) == 580
     assert len(manifest_sha256()) == 64
     assert asset_bundle_ready() is True
     assert card_image_path("spent-tea") == ASSET_DIR / "spent-tea.jpg"
@@ -211,6 +233,13 @@ def test_age_of_sail_provision_images_match_existing_card_dimensions() -> None:
 
 def test_five_new_series_images_match_existing_card_dimensions() -> None:
     for image_name in FIVE_NEW_SERIES_IMAGE_NAMES:
+        with Image.open(ASSET_DIR / image_name) as image:
+            assert image.format == "JPEG"
+            assert image.size == (768, 768)
+
+
+def test_four_everyday_place_images_match_existing_card_dimensions() -> None:
+    for image_name in FOUR_EVERYDAY_PLACE_IMAGE_NAMES:
         with Image.open(ASSET_DIR / image_name) as image:
             assert image.format == "JPEG"
             assert image.size == (768, 768)
