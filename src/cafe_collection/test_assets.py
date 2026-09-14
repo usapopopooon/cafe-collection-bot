@@ -156,12 +156,21 @@ FOUR_EVERYDAY_PLACE_IMAGE_NAMES = {
     "break-room-named-pudding.jpg",
 }
 
+TRANSFER_STOP_IMAGE_NAMES = {
+    "bus-center-yellow-curry.jpg",
+    "platform-dashi-chuka-soba.jpg",
+    "giant-karaage-soba.jpg",
+    "sweet-savory-kashiwa-udon.jpg",
+    "pre-departure-flat-udon.jpg",
+    "station-tricolor-kashiwa-meshi.jpg",
+}
+
 
 def test_bundled_assets_match_shared_manifest() -> None:
     data = manifest()
 
     assert data["version"] == 1
-    assert len(data["files"]) == 580
+    assert len(data["files"]) == 586
     assert len(manifest_sha256()) == 64
     assert asset_bundle_ready() is True
     assert card_image_path("spent-tea") == ASSET_DIR / "spent-tea.jpg"
@@ -240,6 +249,13 @@ def test_five_new_series_images_match_existing_card_dimensions() -> None:
 
 def test_four_everyday_place_images_match_existing_card_dimensions() -> None:
     for image_name in FOUR_EVERYDAY_PLACE_IMAGE_NAMES:
+        with Image.open(ASSET_DIR / image_name) as image:
+            assert image.format == "JPEG"
+            assert image.size == (768, 768)
+
+
+def test_transfer_stop_images_match_existing_card_dimensions() -> None:
+    for image_name in TRANSFER_STOP_IMAGE_NAMES:
         with Image.open(ASSET_DIR / image_name) as image:
             assert image.format == "JPEG"
             assert image.size == (768, 768)
