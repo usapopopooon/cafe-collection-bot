@@ -166,11 +166,58 @@ TRANSFER_STOP_IMAGE_NAMES = {
 }
 
 
+EUROPEAN_BRAND_AND_PANTRY_IMAGE_NAMES = {
+    "kofola.jpg",
+    "cockta.jpg",
+    "almdudler.jpg",
+    "rivella.jpg",
+    "kinnie.jpg",
+    "irn-bru.jpg",
+    "paulaner-spezi.jpg",
+    "club-mate.jpg",
+    "bionade-elderberry.jpg",
+    "crodino.jpg",
+    "sanbitter-rosso.jpg",
+    "sanpellegrino-chinotto.jpg",
+    "pommac.jpg",
+    "apotekarnes-julmust.jpg",
+    "vimto.jpg",
+    "fentimans-dandelion-burdock.jpg",
+    "brisa-maracuja.jpg",
+    "chocomel.jpg",
+    "fristi.jpg",
+    "cacolac.jpg",
+    "vinea.jpg",
+    "traubisoda.jpg",
+    "hellena-oranzada.jpg",
+    "tymbark-apple-mint.jpg",
+    "kubus-apple-carrot-peach.jpg",
+    "pipi.jpg",
+    "brifcor.jpg",
+    "zhyvchyk.jpg",
+    "baikal.jpg",
+    "bread-kvass.jpg",
+    "uzvar.jpg",
+    "socata.jpg",
+    "ryazhenka.jpg",
+    "kama-kefir.jpg",
+    "sbiten.jpg",
+}
+
+
+def test_european_brand_and_pantry_images_match_existing_card_dimensions() -> None:
+    assert len(EUROPEAN_BRAND_AND_PANTRY_IMAGE_NAMES) == 35
+    for image_name in EUROPEAN_BRAND_AND_PANTRY_IMAGE_NAMES:
+        with Image.open(ASSET_DIR / image_name) as image:
+            assert image.format == "JPEG"
+            assert image.size == (768, 768)
+
+
 def test_bundled_assets_match_shared_manifest() -> None:
     data = manifest()
 
     assert data["version"] == 1
-    assert len(data["files"]) == 586
+    assert len(data["files"]) == 621
     assert len(manifest_sha256()) == 64
     assert asset_bundle_ready() is True
     assert card_image_path("spent-tea") == ASSET_DIR / "spent-tea.jpg"

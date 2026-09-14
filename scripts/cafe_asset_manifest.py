@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from typing import TypedDict
 
-EXPECTED_IMAGE_COUNT = 586
+EXPECTED_IMAGE_COUNT = 621
 
 
 class AssetEntry(TypedDict):
