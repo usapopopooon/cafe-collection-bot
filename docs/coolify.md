@@ -2,6 +2,11 @@
 
 ## Application
 
+2026-09-20確認済みのデプロイ先は、SSHホスト `usapoops@192.168.1.152`、
+アプリUUID `e1plretimid14ik9od8scj5m`、リポジトリ
+`usapopopooon/cafe-collection-bot` の `main` です。
+キュー投入時にはpush済みの完全なコミットSHAを指定します。
+
 GitHubリポジトリからDocker Composeアプリケーションを作成します。
 
 - Build Pack: Docker Compose

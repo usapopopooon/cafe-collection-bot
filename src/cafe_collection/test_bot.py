@@ -13,8 +13,8 @@ from cafe_collection.level_api import CafeApiClient
 def _capabilities() -> dict[str, object]:
     return {
         "api_version": 4,
-        "catalog_size": 619,
-        "asset_count": 621,
+        "catalog_size": 639,
+        "asset_count": 641,
         "asset_manifest_sha256": manifest_sha256(),
         "paid_draw_cost_xp": 20,
         "hourly_draw_limit": 10,
@@ -184,11 +184,17 @@ async def test_setup_does_not_retry_incompatible_level_api(
     sleep.assert_not_awaited()
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("catalog_size", 493), ("catalog_size", 619), ("asset_count", 621)],
+)
 async def test_setup_rejects_outdated_catalog_size(
     monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: int,
 ) -> None:
     incompatible = _capabilities()
-    incompatible["catalog_size"] = 493
+    incompatible[field] = value
     api = CafeApiClient(
         "https://level.example.com",
         "cafe-secret",

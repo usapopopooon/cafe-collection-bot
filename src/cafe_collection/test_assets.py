@@ -217,7 +217,7 @@ def test_bundled_assets_match_shared_manifest() -> None:
     data = manifest()
 
     assert data["version"] == 1
-    assert len(data["files"]) == 621
+    assert len(data["files"]) == 641
     assert len(manifest_sha256()) == 64
     assert asset_bundle_ready() is True
     assert card_image_path("spent-tea") == ASSET_DIR / "spent-tea.jpg"
@@ -304,5 +304,37 @@ def test_four_everyday_place_images_match_existing_card_dimensions() -> None:
 def test_transfer_stop_images_match_existing_card_dimensions() -> None:
     for image_name in TRANSFER_STOP_IMAGE_NAMES:
         with Image.open(ASSET_DIR / image_name) as image:
+            assert image.format == "JPEG"
+            assert image.size == (768, 768)
+
+
+def test_seasonal_and_comedy_menu_images_are_available_as_square_jpegs() -> None:
+    card_keys = {
+        "sakura-white-chocolate-latte",
+        "burnt-caramel-latte",
+        "roasted-sweet-potato-brulee-latte",
+        "black-sesame-kinako-latte",
+        "peach-earl-grey-tea-soda",
+        "honey-lemon-espresso-tonic",
+        "pistachio-cream-latte",
+        "blue-sky-cream-soda",
+        "mostly-ice-coffee",
+        "milk-lost-coffee",
+        "bottom-sweet-latte",
+        "lid-stuck-whipped-cream",
+        "less-sweet-sugar-water",
+        "same-as-yesterday-blend",
+        "grand-cup-instant-coffee",
+        "hot-coffee-ordered-iced",
+        "warm-apple-pie-vanilla-ice-cream",
+        "honey-cheese-thick-toast",
+        "fork-repelling-tart",
+        "reheated-cinnamon-roll-cluster",
+    }
+    assert len(card_keys) == 20
+    for card_key in card_keys:
+        path = card_image_path(card_key)
+        assert path == ASSET_DIR / f"{card_key}.jpg"
+        with Image.open(path) as image:
             assert image.format == "JPEG"
             assert image.size == (768, 768)

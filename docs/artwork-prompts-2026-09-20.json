@@ -1,0 +1,318 @@
+{
+  "date": "2026-09-20",
+  "generator": "built-in image_gen",
+  "normalization": "sips: 768x768 JPEG",
+  "cards": [
+    {
+      "key": "sakura-white-chocolate-latte",
+      "prompt": "Use case: product-mockup. Asset type: square collectible cafe menu card photograph. Scene: a cozy classic Japanese kissaten cafe, dark polished wooden table, softly blurred coffee-bar background with warm amber lamplight. Style: sophisticated photorealistic food-and-beverage product photography, authentic textures, soft shallow depth of field, warm cozy amber highlights, realistic color and glass or ceramic materials. Composition: 1:1 square, eye level slightly above the cup to reveal drink details, single main serving centered and fully visible, all important subject parts within the middle 80% leaving at least 10% safe margin at every edge. Constraints: no text, letters, logos, watermark, border, people, hands, or extra foods. Realistic tasteful cafe plating, clean focused composition. Subject: A pale cherry-blossom pink espresso milk latte in an ivory ceramic cup and saucer, topped with white chocolate curls and one edible pink sakura blossom; subtle light brown coffee below the pink foam. The flower and white chocolate are small elegant finishing touches and the cup remains the main focus.",
+      "source": "/Users/user/.codex/generated_images/01a0bdab-5a56-7f82-b6a9-1a0bf1bfcac5/exec-5decd95b-abb3-4caa-b184-022fcfefb875.png",
+      "destination": "src/cafe_collection/assets/sakura-white-chocolate-latte.jpg",
+      "method": "built-in image_gen",
+      "qa": "Photorealistic pink latte, white chocolate and sakura, centered and no text; visual QA passed.",
+      "generator": "built-in image_gen",
+      "name": "桜とホワイトチョコのラテ",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG"
+    },
+    {
+      "key": "burnt-caramel-latte",
+      "prompt": "Use case: product-mockup. Asset type: square collectible cafe menu card photograph. Scene: a cozy classic Japanese kissaten cafe, dark polished wooden table, softly blurred coffee-bar background with warm amber lamplight. Style: sophisticated photorealistic food-and-beverage product photography, authentic textures, soft shallow depth of field, warm cozy amber highlights, realistic color and glass or ceramic materials. Composition: 1:1 square, eye level slightly above the cup to reveal drink details, single main serving centered and fully visible, all important subject parts within the middle 80% leaving at least 10% safe margin at every edge. Constraints: no text, letters, logos, watermark, border, people, hands, or extra foods. Realistic tasteful cafe plating, clean focused composition. Subject: A warm espresso latte in a wide cream ceramic mug with a glossy dark amber burnt-caramel spiral over silky milk foam, matching saucer. The elegant caramel spiral is the defining feature, appetizing toasted caramel tones, no whipped cream mountain.Framing is critical: medium product shot, camera pulled back, cup handle and saucer outer edge entirely inside the central 70% of the square, at least 15% empty table around every side of the serving, never close-up.",
+      "source": "/Users/user/.codex/generated_images/01a0bdab-5a56-7f82-b6a9-1a0bf1bfcac5/exec-131ecd9b-4a17-4f68-93f2-b12c1038b296.png",
+      "destination": "src/cafe_collection/assets/burnt-caramel-latte.jpg",
+      "method": "built-in image_gen",
+      "qa": "Caramel spiral latte with ample framing, warm photorealism and no text; visual QA passed.",
+      "generator": "built-in image_gen",
+      "name": "焦がしキャラメルラテ",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG"
+    },
+    {
+      "key": "roasted-sweet-potato-brulee-latte",
+      "prompt": "Use case: product-mockup. Asset type: square collectible cafe menu card photograph. Scene: a cozy classic Japanese kissaten cafe, dark polished wooden table, softly blurred coffee-bar background with warm amber lamplight. Style: sophisticated photorealistic food-and-beverage product photography, authentic textures, soft shallow depth of field, warm cozy amber highlights, realistic color and glass or ceramic materials. Composition: 1:1 square, eye level slightly above the cup to reveal drink details, single main serving centered and fully visible, all important subject parts within the middle 80% leaving at least 10% safe margin at every edge. Constraints: no text, letters, logos, watermark, border, people, hands, or extra foods. Realistic tasteful cafe plating, clean focused composition. Subject: Golden roasted sweet potato milk latte in an elegant handled glass, topped with a very thin cracked caramelized brulee sugar disc and a small roasted sweet-potato wedge with purple skin. Luxurious but realistic cafe beverage. The glass reveals opaque golden sweet potato milk; the wafer-thin caramelized sugar disc rests on the foam and is visibly delicately cracked, the purple-skinned roasted potato garnish is small. Framing is critical: medium product shot, camera pulled back, entire vessel and saucer outer edge entirely inside the central 75% of the square, at least 12% empty space around every side of the serving, never an extreme close-up.",
+      "source": "/Users/user/.codex/generated_images/01a0bdab-5a56-7f82-b6a9-1a0bf1bfcac5/exec-9e688a12-cd48-47d0-806c-c2b68cf3c5b5.png",
+      "destination": "src/cafe_collection/assets/roasted-sweet-potato-brulee-latte.jpg",
+      "method": "built-in image_gen",
+      "qa": "Golden sweet potato milk in handled glass, thin cracked brulee and purple-skinned potato garnish, safe framing; visual QA passed.",
+      "generator": "built-in image_gen",
+      "name": "焼き芋ブリュレラテ",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG"
+    },
+    {
+      "key": "black-sesame-kinako-latte",
+      "prompt": "Use case: product-mockup. Asset type: square collectible cafe menu card photograph. Scene: a cozy classic Japanese kissaten cafe, dark polished wooden table, softly blurred coffee-bar background with warm amber lamplight. Style: sophisticated photorealistic food-and-beverage product photography, authentic textures, soft shallow depth of field, warm cozy amber highlights, realistic color and glass or ceramic materials. Composition: 1:1 square, eye level slightly above the cup to reveal drink details, single main serving centered and fully visible, all important subject parts within the middle 80% leaving at least 10% safe margin at every edge. Constraints: no text, letters, logos, watermark, border, people, hands, or extra foods. Realistic tasteful cafe plating, clean focused composition. Subject: Warm charcoal-gray black sesame milk latte in a rustic cream ceramic cup, ivory foam dusted with golden kinako soybean powder and a few tiny black sesame seeds. Matching rustic saucer; the gray milk color, warm golden soybean dust and small sesame seeds are clearly visible and distinct. Framing is critical: medium product shot, camera pulled back, entire vessel and saucer outer edge entirely inside the central 75% of the square, at least 12% empty space around every side of the serving, never an extreme close-up.",
+      "source": "/Users/user/.codex/generated_images/01a0bdab-5a56-7f82-b6a9-1a0bf1bfcac5/exec-62d890a0-6aa3-4d09-968d-8807ebcd1795.png",
+      "destination": "src/cafe_collection/assets/black-sesame-kinako-latte.jpg",
+      "method": "built-in image_gen",
+      "qa": "Gray sesame latte with kinako and black sesame seeds, rustic ceramic and ample framing; visual QA passed.",
+      "generator": "built-in image_gen",
+      "name": "黒ごまきなこラテ",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG"
+    },
+    {
+      "key": "peach-earl-grey-tea-soda",
+      "prompt": "Use case: product-mockup. Asset type: square collectible cafe menu card photograph. Scene: a cozy classic Japanese kissaten cafe, dark polished wooden table, softly blurred coffee-bar background with warm amber lamplight. Style: sophisticated photorealistic food-and-beverage product photography, authentic textures, soft shallow depth of field, warm cozy amber highlights, realistic color and glass or ceramic materials. Composition: 1:1 square, eye level slightly above the cup to reveal drink details, single main serving centered and fully visible, all important subject parts within the middle 80% leaving at least 10% safe margin at every edge. Constraints: no text, letters, logos, watermark, border, people, hands, or extra foods. Realistic tasteful cafe plating, clean focused composition. Subject: Tall clear iced tea soda glass, pale peach-pink fruit syrup blending into amber Earl Grey tea, sparkling bubbles, fresh white peach slices and one mint sprig, elegant long spoon. The beautiful transparent glass shows delicate pink-to-amber color graduation and tiny bubbles; peach is recognizable fresh white peach slices with pale pink skin. Framing is critical: medium product shot, camera pulled back, entire vessel and saucer outer edge entirely inside the central 75% of the square, at least 12% empty space around every side of the serving, never an extreme close-up.",
+      "editPrompt": "Use case: precise-object-edit. This is a cafe collection menu photograph. Change only the silver spoon position: remove the upright spoon from the glass, and place a small elegant silver long spoon lying flat diagonally on the saucer with no part extending beyond the saucer. Preserve the glass, the peach slices, the mint, the sparkling peach and Earl Grey tea drink, plate, lighting, background and square composition exactly. Every part of the spoon must be at least 10% of the image height away from every image edge. No words, logos, people, borders.",
+      "editSource": "/Users/user/.codex/generated_images/01a0bdab-5a56-7f82-b6a9-1a0bf1bfcac5/exec-7b35a688-27e6-4926-a2fd-9b9f1e43cb9e.png",
+      "source": "/Users/user/.codex/generated_images/01a0bdab-5a56-7f82-b6a9-1a0bf1bfcac5/exec-a218b6fd-4b4f-4d98-822c-8d7b1996889f.png",
+      "destination": "src/cafe_collection/assets/peach-earl-grey-tea-soda.jpg",
+      "method": "built-in image_gen",
+      "qa": "Pink-to-amber sparkling peach tea with peach slices and mint; spoon on saucer corrected safe framing, no text; visual QA passed.",
+      "generator": "built-in image_gen",
+      "name": "桃とアールグレイのティーソーダ",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG"
+    },
+    {
+      "key": "honey-lemon-espresso-tonic",
+      "prompt": "Use case: product-mockup. Asset type: square collectible cafe menu card photograph. Scene: a cozy classic Japanese kissaten cafe, dark polished wooden table, softly blurred coffee-bar background with warm amber lamplight. Style: sophisticated photorealistic food-and-beverage product photography, authentic textures, soft shallow depth of field, warm cozy amber highlights, realistic color and glass or ceramic materials. Composition: 1:1 square, eye level slightly above the cup to reveal drink details, single main serving centered and fully visible, all important subject parts within the middle 80% leaving at least 10% safe margin at every edge. Constraints: no text, letters, logos, watermark, border, people, hands, or extra foods. Realistic tasteful cafe plating, clean focused composition. Subject: Clear tall glass of sparkling honey lemon tonic and ice with a distinct dark espresso layer floating above translucent golden tonic, one lemon wheel, tiny lively bubbles. The honey-lemon tonic is transparent pale gold in the bottom two-thirds and the espresso forms a deep brown clearly separate upper layer, condensation on clear glass, a small elegant coaster. Framing is critical: medium product shot, camera pulled back, entire vessel and saucer outer edge entirely inside the central 75% of the square, at least 12% empty space around every side of the serving, never an extreme close-up.",
+      "source": "/Users/user/.codex/generated_images/01a0bdab-5a56-7f82-b6a9-1a0bf1bfcac5/exec-87fbc832-7181-43af-b856-7d672a3a2621.png",
+      "destination": "src/cafe_collection/assets/honey-lemon-espresso-tonic.jpg",
+      "method": "built-in image_gen",
+      "qa": "Distinct dark espresso layer over golden sparkling honey lemon, lemon wheel and clear glass with ample framing; visual QA passed.",
+      "generator": "built-in image_gen",
+      "name": "はちみつレモンのエスプレッソトニック",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG"
+    },
+    {
+      "key": "pistachio-cream-latte",
+      "prompt": "Use case: product-mockup. Asset type: square collectible cafe menu card photograph. Scene: a cozy classic Japanese kissaten cafe, dark polished wooden table, softly blurred coffee-bar background with warm amber lamplight. Style: sophisticated photorealistic food-and-beverage product photography, authentic textures, soft shallow depth of field, warm cozy amber highlights, realistic color and glass or ceramic materials. Composition: 1:1 square, eye level slightly above the cup to reveal drink details, single main serving centered and fully visible, all important subject parts within the middle 80% leaving at least 10% safe margin at every edge. Constraints: no text, letters, logos, watermark, border, people, hands, or extra foods. Realistic tasteful cafe plating, clean focused composition. Subject: Premium espresso latte in elegant ivory porcelain, crowned with pale natural green pistachio cream and a modest sprinkling of chopped pistachios, thin antique-gold saucer trim. The pale pistachio green cream is smooth and luxurious, coffee visible as a small brown rim around the cream. A restrained real cafe serving, appetizing and refined. Framing is critical: medium product shot, camera pulled back, entire vessel and saucer outer edge entirely inside the central 75% of the square, at least 12% empty space around every side of the serving, never an extreme close-up.",
+      "source": "/Users/user/.codex/generated_images/01a0bdab-5a56-7f82-b6a9-1a0bf1bfcac5/exec-f64cbfc4-b655-4f46-8387-ab61ffa32fc6.png",
+      "destination": "src/cafe_collection/assets/pistachio-cream-latte.jpg",
+      "method": "built-in image_gen",
+      "qa": "Natural green pistachio cream latte with chopped nuts, elegant gold-trimmed porcelain and safe framing; visual QA passed.",
+      "generator": "built-in image_gen",
+      "name": "ピスタチオクリームラテ",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG"
+    },
+    {
+      "index": 7,
+      "key": "blue-sky-cream-soda",
+      "mode": "built-in image_gen",
+      "prompt": "Use case: photorealistic-natural\nAsset type: single square cafe collection card photo.\nPrimary request: 青空クリームソーダ — clear blue soda with a cloudlike scoop of vanilla.\nSubject: Classic tall footed Japanese kissaten soda glass with vivid clear sky-blue sparkling soda, ice cubes, one cloudlike scoop of vanilla ice cream and a red cherry, white paper straw.\nScene/backdrop: dark polished wooden table in a cozy traditional kissaten, warm amber cafe lighting, softly blurred dark wood and warm lamp bokeh in background.\nStyle/medium: appetizing realistic food and beverage photograph, natural glass reflections and condensation, detailed textures, shallow depth of field.\nComposition/framing: square image, centered single beverage, three-quarter view with entire glass, cherry and straw fully inside image, generous safe margin of at least 10 percent on every edge. Make the blue soda clearly visible and luminous.\nConstraints: no people, hands, text, logos, watermark, border, or frame. One finished photo only.",
+      "edit_prompt": null,
+      "original_source": "/Users/user/.codex/generated_images/01a0bda2-4a27-7f32-a5b8-e512d28ed3d0/exec-0b710b69-a1fe-444d-9879-04dbaaf672e8.png",
+      "source": "/Users/user/.codex/generated_images/01a0bda2-4a27-7f32-a5b8-e512d28ed3d0/exec-0b710b69-a1fe-444d-9879-04dbaaf672e8.png",
+      "destination": "src/cafe_collection/assets/blue-sky-cream-soda.jpg",
+      "visual_review": "Passed: correct beverage subject, warm amber cafe photography, no people/text/logo/frame, full primary subject visible.",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG",
+      "generator": "built-in image_gen",
+      "name": "青空クリームソーダ"
+    },
+    {
+      "index": 8,
+      "key": "mostly-ice-coffee",
+      "mode": "built-in image_gen",
+      "prompt": "Use case: photorealistic-natural\nAsset type: single square cafe collection card photo.\nPrimary request: ほぼ氷のアイスコーヒー.\nSubject: Comically overfilled clear tumbler packed almost entirely with large clear ice cubes to the rim, only a tiny shallow amount of dark iced coffee in the gaps at the bottom, condensation and a plain straw. The coffee itself fills only the bottom quarter of the glass; upper three quarters consist visibly of clear ice with air gaps.\nScene/backdrop: dark polished wooden table in a cozy traditional kissaten, warm amber cafe lighting, softly blurred dark wood and warm lamp bokeh in background.\nStyle/medium: realistic food and beverage photography with natural reflections, detailed textures and shallow depth of field. Visually convey this humorous menu through the arrangement of ordinary real objects.\nComposition/framing: square centered composition, three-quarter view, complete subject fully inside image with at least 10 percent safe margin on every edge.\nConstraints: no people, hands, text, logos, watermark, borders or frames. Single finished photograph only.",
+      "edit_prompt": null,
+      "original_source": "/Users/user/.codex/generated_images/01a0bda2-4a27-7f32-a5b8-e512d28ed3d0/exec-e7e53ebf-94ff-4cd5-ab8f-c5fb36f0d354.png",
+      "source": "/Users/user/.codex/generated_images/01a0bda2-4a27-7f32-a5b8-e512d28ed3d0/exec-e7e53ebf-94ff-4cd5-ab8f-c5fb36f0d354.png",
+      "destination": "src/cafe_collection/assets/mostly-ice-coffee.jpg",
+      "visual_review": "Passed: correct beverage subject, warm amber cafe photography, no people/text/logo/frame, full primary subject visible.",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG",
+      "generator": "built-in image_gen",
+      "name": "ほぼ氷のアイスコーヒー"
+    },
+    {
+      "index": 9,
+      "key": "milk-lost-coffee",
+      "mode": "built-in image_gen",
+      "prompt": "Use case: photorealistic-natural\nAsset type: single square cafe collection card photo.\nPrimary request: 追いミルクで行方不明になった珈琲.\nSubject: A coffee cup now filled almost entirely with pale white milk, only a faint tiny tan coffee swirl remains, an oversized nearly empty ceramic milk pitcher beside it. Quiet visual joke.\nScene/backdrop: dark polished wooden table in a cozy traditional kissaten, warm amber cafe lighting, softly blurred dark wood and warm lamp bokeh in background.\nStyle/medium: realistic food and beverage photography with natural reflections, detailed textures and shallow depth of field. Visually convey this humorous menu through the arrangement of ordinary real objects.\nComposition/framing: square centered composition, three-quarter view, complete subject fully inside image with at least 10 percent safe margin on every edge.\nConstraints: no people, hands, text, logos, watermark, borders or frames. Single finished photograph only.",
+      "edit_prompt": "Use case: precise-object-edit\nEdit target: the attached cafe beverage photograph. Change only the camera framing by pulling back slightly and recentering the still life. Keep exactly the same almost-white milk coffee in a white cup with the tiny tan swirl, same oversized nearly empty milk pitcher, spoon, saucer, realistic textures, dark wooden cafe table, and amber lighting. Make ALL foreground objects including the entire pitcher handle and saucer fit inside the central 75 percent of the square frame, with at least 10 percent visible background/table clearance between every foreground object and every frame edge. Preserve the subject appearance and cozy photographic style. No text, logos, watermarks, frames, people or hands.",
+      "original_source": "/Users/user/.codex/generated_images/01a0bda2-4a27-7f32-a5b8-e512d28ed3d0/exec-cfca2b6f-10b6-42fa-afb0-baa3785b0f83.png",
+      "source": "/Users/user/.codex/generated_images/01a0bda2-4a27-7f32-a5b8-e512d28ed3d0/exec-f4d36c7b-00e1-49b8-b033-0250a805a839.png",
+      "destination": "src/cafe_collection/assets/milk-lost-coffee.jpg",
+      "visual_review": "Passed: correct beverage subject, warm amber cafe photography, no people/text/logo/frame, full primary subject visible.",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG",
+      "generator": "built-in image_gen",
+      "name": "追いミルクで行方不明になった珈琲"
+    },
+    {
+      "index": 10,
+      "key": "bottom-sweet-latte",
+      "mode": "built-in image_gen",
+      "prompt": "Use case: photorealistic-natural\nAsset type: single square cafe collection card photo.\nPrimary request: 底だけ甘いカフェラテ.\nSubject: Clear handled glass of milk coffee with an exaggerated dense unmixed dark caramel syrup layer pooled at the bottom, pale latte above, untouched long spoon resting beside it. The syrup layer is a clearly distinct dense dark amber bottom layer one fifth of the glass height, not dark coffee on top; pale latte occupies the rest.\nScene/backdrop: dark polished wooden table in a cozy traditional kissaten, warm amber cafe lighting, softly blurred dark wood and warm lamp bokeh in background.\nStyle/medium: realistic food and beverage photography with natural reflections, detailed textures and shallow depth of field. Visually convey this humorous menu through ordinary real objects.\nComposition/framing: square centered composition, three-quarter view showing the drink surface and the important side detail, all foreground objects completely visible with generous 15 percent empty table safety margin to every image edge. Camera pulled back enough to include every object.\nConstraints: no people, hands, text, logos, watermark, borders or frames. Single finished photograph only.",
+      "edit_prompt": null,
+      "original_source": "/Users/user/.codex/generated_images/01a0bda2-4a27-7f32-a5b8-e512d28ed3d0/exec-f69e3b7d-fd79-49dc-9a11-b1dc77e4e854.png",
+      "source": "/Users/user/.codex/generated_images/01a0bda2-4a27-7f32-a5b8-e512d28ed3d0/exec-f69e3b7d-fd79-49dc-9a11-b1dc77e4e854.png",
+      "destination": "src/cafe_collection/assets/bottom-sweet-latte.jpg",
+      "visual_review": "Passed: correct beverage subject, warm amber cafe photography, no people/text/logo/frame, full primary subject visible.",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG",
+      "generator": "built-in image_gen",
+      "name": "底だけ甘いカフェラテ"
+    },
+    {
+      "index": 11,
+      "key": "lid-stuck-whipped-cream",
+      "mode": "built-in image_gen",
+      "prompt": "Use case: photorealistic-natural\nAsset type: single square cafe collection card photo.\nPrimary request: 蓋の裏に全部ついたホイップ.\nSubject: Plain unbranded takeaway latte cup open with bare coffee surface and absolutely no whipped cream on the cup, its removed dark lid lying upside down beside it holding the entire mound of white whipped cream stuck to the inside. Both cup and upside-down lid prominently visible. Quiet visual joke: the entire topping has come off onto the lid.\nScene/backdrop: dark polished wooden table in a cozy traditional kissaten, warm amber cafe lighting, softly blurred dark wood and warm lamp bokeh in background.\nStyle/medium: realistic food and beverage photography with natural reflections, detailed textures and shallow depth of field. Visually convey this humorous menu through ordinary real objects.\nComposition/framing: square centered composition, three-quarter view showing the drink surface and the important side detail, all foreground objects completely visible with generous 15 percent empty table safety margin to every image edge. Camera pulled back enough to include every object.\nConstraints: no people, hands, text, logos, watermark, borders or frames. Single finished photograph only.",
+      "edit_prompt": null,
+      "original_source": "/Users/user/.codex/generated_images/01a0bda2-4a27-7f32-a5b8-e512d28ed3d0/exec-e2fcbd5f-21d0-4a8e-8164-9d501f7ff22a.png",
+      "source": "/Users/user/.codex/generated_images/01a0bda2-4a27-7f32-a5b8-e512d28ed3d0/exec-e2fcbd5f-21d0-4a8e-8164-9d501f7ff22a.png",
+      "destination": "src/cafe_collection/assets/lid-stuck-whipped-cream.jpg",
+      "visual_review": "Passed: correct beverage subject, warm amber cafe photography, no people/text/logo/frame, full primary subject visible.",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG",
+      "generator": "built-in image_gen",
+      "name": "蓋の裏に全部ついたホイップ"
+    },
+    {
+      "index": 12,
+      "key": "less-sweet-sugar-water",
+      "mode": "built-in image_gen",
+      "prompt": "Use case: photorealistic-natural\nAsset type: single square cafe collection card photo.\nPrimary request: 「甘さ控えめ」で注文した砂糖水.\nSubject: Simple clear tumbler of almost colorless sugar water, visibly thick transparent syrup pooled at the bottom and a small absurd mound of white sugar cubes on a side dish, an ordinary metal spoon, understated cafe joke. Drink must remain transparent almost colorless, not coffee or tea.\nScene/backdrop: dark polished wooden table in a cozy traditional kissaten, warm amber cafe lighting, softly blurred dark wood and warm lamp bokeh in background.\nStyle/medium: realistic food and beverage photography with natural reflections, detailed textures and shallow depth of field. Visually convey this humorous menu through ordinary real objects.\nComposition/framing: square centered composition, three-quarter view, all foreground objects completely visible with generous 15 percent empty table safety margin to every image edge. Camera pulled back enough to include every object.\nConstraints: no people, hands, text, logos, watermark, borders or frames. Single finished photograph only.",
+      "edit_prompt": null,
+      "original_source": "/Users/user/.codex/generated_images/01a0bda2-4a27-7f32-a5b8-e512d28ed3d0/exec-10f6f2ac-af69-4d3b-ae44-b5c7098e9930.png",
+      "source": "/Users/user/.codex/generated_images/01a0bda2-4a27-7f32-a5b8-e512d28ed3d0/exec-10f6f2ac-af69-4d3b-ae44-b5c7098e9930.png",
+      "destination": "src/cafe_collection/assets/less-sweet-sugar-water.jpg",
+      "visual_review": "Passed: correct beverage subject, warm amber cafe photography, no people/text/logo/frame, full primary subject visible.",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG",
+      "generator": "built-in image_gen",
+      "name": "「甘さ控えめ」で注文した砂糖水"
+    },
+    {
+      "index": 13,
+      "key": "same-as-yesterday-blend",
+      "mode": "built-in image_gen",
+      "prompt": "Use case: photorealistic-natural\nAsset type: single square cafe collection card photo.\nPrimary request: 昨日と同じ気まぐれブレンド.\nSubject: One ordinary white coffee cup full of black filter coffee on a saucer in the foreground, two identical matching cups softly blurred behind in a repeating row, gentle sense of unchanging routine. Three cups total; foreground cup crisp, rear two softly out of focus, all containing identical dark filter coffee.\nScene/backdrop: dark polished wooden table in a cozy traditional kissaten, warm amber cafe lighting, softly blurred dark wood and warm lamp bokeh in background.\nStyle/medium: realistic food and beverage photography with natural reflections, detailed textures and shallow depth of field. Visually convey this humorous menu through ordinary real objects.\nComposition/framing: square centered composition, three-quarter view, all foreground objects completely visible with generous 15 percent empty table safety margin to every image edge. Camera pulled back enough to include every object.\nConstraints: no people, hands, text, logos, watermark, borders or frames. Single finished photograph only.",
+      "edit_prompt": null,
+      "original_source": "/Users/user/.codex/generated_images/01a0bda2-4a27-7f32-a5b8-e512d28ed3d0/exec-91d60b40-65d2-4602-9b97-0fe60a00e52a.png",
+      "source": "/Users/user/.codex/generated_images/01a0bda2-4a27-7f32-a5b8-e512d28ed3d0/exec-91d60b40-65d2-4602-9b97-0fe60a00e52a.png",
+      "destination": "src/cafe_collection/assets/same-as-yesterday-blend.jpg",
+      "visual_review": "Passed: correct beverage subject, warm amber cafe photography, no people/text/logo/frame, full primary subject visible.",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG",
+      "generator": "built-in image_gen",
+      "name": "昨日と同じ気まぐれブレンド"
+    },
+    {
+      "key": "grand-cup-instant-coffee",
+      "prompt": "Use case: product-mockup. Asset type: single square cafe collection card artwork. Primary subject: Comically ornate gilded porcelain coffee cup and elaborate gold-trimmed saucer holding ordinary plain coffee, beside a humble teaspoon of visible instant coffee granules and an unlabelled small glass jar. This illustrates カップだけ異常に立派なインスタント. Style: realistic premium cafe menu still-life photography, warm amber Japanese kissaten lamplight, dark walnut tabletop, softly blurred cafe background, rich natural texture, 45-degree close view. Entire subject centered with 10 percent safe margins for UI. No people, hands, words, lettering, numbers, logos, watermark or card frame. Exactly one square image.",
+      "source": "/Users/user/.codex/generated_images/01a0b37e-780a-7013-9e05-f1ba28014101/exec-07621e50-14cd-4e88-a1d1-42512434b297.png",
+      "destination": "src/cafe_collection/assets/grand-cup-instant-coffee.jpg",
+      "generator": "built-in image_gen",
+      "name": "カップだけ異常に立派なインスタント",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG"
+    },
+    {
+      "key": "hot-coffee-ordered-iced",
+      "prompt": "Use case: product-mockup. Asset type: single square cafe collection card artwork. Style: realistic premium cafe menu still-life photography, warm amber Japanese kissaten lamplight, dark walnut tabletop, softly blurred cafe background, rich natural texture, 45-degree close view. Entire subject centered with 10 percent safe margins for UI. No people, hands, words, lettering, numbers, logos, watermark or card frame. Exactly one square image. Primary subject: A steaming hot black coffee in ceramic cup with very visible curling steam, beside a small glass dish of unused ice cubes and a wrapped plain paper straw, humorous wrong-temperature cafe order. No receipt or text.",
+      "source": "/Users/user/.codex/generated_images/01a0b37e-780a-7013-9e05-f1ba28014101/exec-71156202-366a-40ab-bc44-f55bde3feba9.png",
+      "destination": "src/cafe_collection/assets/hot-coffee-ordered-iced.jpg",
+      "generator": "built-in image_gen",
+      "name": "アイスで頼んだホットコーヒー",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG"
+    },
+    {
+      "key": "warm-apple-pie-vanilla-ice-cream",
+      "prompt": "Use case: product-mockup. Asset type: single square cafe collection card artwork. Style: realistic premium cafe menu still-life photography, warm amber Japanese kissaten lamplight, dark walnut tabletop, softly blurred cafe background, rich natural texture, 45-degree close view. Entire subject centered with 10 percent safe margins for UI. No people, hands, words, lettering, numbers, logos, watermark or card frame. Exactly one square image. Primary subject: A warm golden flaky apple pie slice with clearly visible cinnamon apple filling on a cream dessert plate, one scoop of vanilla ice cream gently melting alongside, small silver dessert fork.",
+      "source": "/Users/user/.codex/generated_images/01a0b37e-780a-7013-9e05-f1ba28014101/exec-0f32c01f-827e-4ce7-b372-e092c0fa9a6f.png",
+      "destination": "src/cafe_collection/assets/warm-apple-pie-vanilla-ice-cream.jpg",
+      "generator": "built-in image_gen",
+      "name": "焼きたてアップルパイのバニラアイス添え",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG"
+    },
+    {
+      "key": "honey-cheese-thick-toast",
+      "prompt": "Use case: product-mockup. Asset type: single square cafe collection card artwork. Style: realistic premium cafe menu still-life photography, warm amber Japanese kissaten lamplight, dark walnut tabletop, softly blurred cafe background, rich natural texture, 45-degree close view. Entire subject centered with 10 percent safe margins for UI. No people, hands, words, lettering, numbers, logos, watermark or card frame. Exactly one square image. Primary subject: Very thick square Japanese shokupan toast on a ceramic plate, browned bubbling melted cheese and glossy golden honey drizzle, crisp golden crust and fluffy interior, simple cafe plating.",
+      "source": "/Users/user/.codex/generated_images/01a0b37e-780a-7013-9e05-f1ba28014101/exec-f2b2f6c2-d146-41ae-8365-c323552aca6c.png",
+      "destination": "src/cafe_collection/assets/honey-cheese-thick-toast.jpg",
+      "generator": "built-in image_gen",
+      "name": "はちみつチーズの厚切りトースト",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG"
+    },
+    {
+      "key": "fork-repelling-tart",
+      "prompt": "Use case: product-mockup. Asset type: single square cafe collection card artwork. Style: realistic premium cafe menu still-life photography, warm amber Japanese kissaten lamplight, dark walnut tabletop, softly blurred cafe background, rich natural texture, 45-degree close view. Entire subject centered with 10 percent safe margins for UI. No people, hands, words, lettering, numbers, logos, watermark or card frame. Exactly one square image. Primary subject: A handsome small fruit tart on a dessert plate with an unusually thick hard dark golden pastry shell, a gently bent dessert fork rests against the intact crust, subtle absurd cafe humor, no motion graphics.",
+      "source": "/Users/user/.codex/generated_images/01a0b37e-780a-7013-9e05-f1ba28014101/exec-7f0634ad-4da8-4f7c-9181-25dd7cafd834.png",
+      "destination": "src/cafe_collection/assets/fork-repelling-tart.jpg",
+      "generator": "built-in image_gen",
+      "name": "フォークを跳ね返すタルト",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG"
+    },
+    {
+      "key": "reheated-cinnamon-roll-cluster",
+      "prompt": "Use case: product-mockup. Asset type: single square cafe collection card artwork. Style: realistic premium cafe menu still-life photography, warm amber Japanese kissaten lamplight, dark walnut tabletop, softly blurred cafe background, rich natural texture, 45-degree close view. Entire subject centered with 10 percent safe margins for UI. No people, hands, words, lettering, numbers, logos, watermark or card frame. Exactly one square image. Primary subject: Three cinnamon rolls warmed together on a small plate, unmistakably fused into one connected cluster by glossy cinnamon glaze and melted icing, individual spiral tops still clearly visible, cozy humorous cafe dessert.",
+      "source": "/Users/user/.codex/generated_images/01a0b37e-780a-7013-9e05-f1ba28014101/exec-f13751a2-a6d4-4503-b20a-b25f4724444a.png",
+      "destination": "src/cafe_collection/assets/reheated-cinnamon-roll-cluster.jpg",
+      "generator": "built-in image_gen",
+      "name": "温めたら全員くっついたシナモンロール",
+      "size": [
+        768,
+        768
+      ],
+      "format": "JPEG"
+    }
+  ]
+}
