@@ -204,6 +204,15 @@ EUROPEAN_BRAND_AND_PANTRY_IMAGE_NAMES = {
     "sbiten.jpg",
 }
 
+LEVANT_GULF_IMAGE_NAMES = {
+    "gulf-cardamom-gahwa.jpg",
+    "roadside-karak-chai.jpg",
+    "pine-nut-jallab.jpg",
+    "zaatar-manakish.jpg",
+    "wood-mold-maamoul.jpg",
+    "hot-knafeh.jpg",
+}
+
 
 def test_european_brand_and_pantry_images_match_existing_card_dimensions() -> None:
     assert len(EUROPEAN_BRAND_AND_PANTRY_IMAGE_NAMES) == 35
@@ -213,11 +222,19 @@ def test_european_brand_and_pantry_images_match_existing_card_dimensions() -> No
             assert image.size == (768, 768)
 
 
+def test_levant_and_gulf_images_match_existing_card_dimensions() -> None:
+    assert len(LEVANT_GULF_IMAGE_NAMES) == 6
+    for image_name in LEVANT_GULF_IMAGE_NAMES:
+        with Image.open(ASSET_DIR / image_name) as image:
+            assert image.format == "JPEG"
+            assert image.size == (768, 768)
+
+
 def test_bundled_assets_match_shared_manifest() -> None:
     data = manifest()
 
     assert data["version"] == 1
-    assert len(data["files"]) == 641
+    assert len(data["files"]) == 647
     assert len(manifest_sha256()) == 64
     assert asset_bundle_ready() is True
     assert card_image_path("spent-tea") == ASSET_DIR / "spent-tea.jpg"
