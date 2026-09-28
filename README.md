@@ -2,7 +2,7 @@
 
 `level-bot` から分離したカフェ・コレクション専用Discord Botです。
 
-Discordのカフェ機能、カード651種と共通画像2枚、サイト向け公開API、ヘルスAPI、CI、
+Discordのカフェ機能、カード657種と共通画像2枚、サイト向け公開API、ヘルスAPI、CI、
 Docker Composeをこのリポジトリが所有します。抽選・カード棚・ランキングは認証付き
 内部APIを通じて、level-botに残る共通の抽選・XP・コレクション状態を利用します。
 
@@ -21,6 +21,10 @@ Docker Composeをこのリポジトリが所有します。抽選・カード棚
 
 中央アジア5か国の飲み物・軽食・菓子6種の追加一覧と画像制作記録は
 [docs/menu-additions-2026-09-28.md](docs/menu-additions-2026-09-28.md) を参照してください。
+
+モンゴル・シベリア・サハ・エヴェンキの乳製品・菓子・軽食・飲み物6種の追加一覧と
+画像制作記録は [docs/menu-additions-2026-09-28-steppe-taiga.md](docs/menu-additions-2026-09-28-steppe-taiga.md)
+を参照してください。
 
 状態、取引、公開データ、DBテーブルの正本は `level-bot` に残しています。サイトが参照する
 図鑑・ランキング・個人棚APIとカード画像は

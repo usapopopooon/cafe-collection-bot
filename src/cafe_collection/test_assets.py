@@ -222,6 +222,15 @@ CENTRAL_ASIAN_IMAGE_NAMES = {
     "festive-pishme.jpg",
 }
 
+STEPPE_TAIGA_IMAGE_NAMES = {
+    "steppe-urum.jpg",
+    "sun-dried-aaruul.jpg",
+    "bird-cherry-cake.jpg",
+    "berry-kerchekh.jpg",
+    "ember-kolobo.jpg",
+    "taiga-berry-milk.jpg",
+}
+
 
 def test_european_brand_and_pantry_images_match_existing_card_dimensions() -> None:
     assert len(EUROPEAN_BRAND_AND_PANTRY_IMAGE_NAMES) == 35
@@ -249,11 +258,21 @@ def test_central_asian_images_are_available_as_square_jpegs() -> None:
             assert image.size == (768, 768)
 
 
+def test_steppe_and_taiga_images_are_available_as_square_jpegs() -> None:
+    assert len(STEPPE_TAIGA_IMAGE_NAMES) == 6
+    for image_name in STEPPE_TAIGA_IMAGE_NAMES:
+        path = card_image_path(image_name.removesuffix(".jpg"))
+        assert path == ASSET_DIR / image_name
+        with Image.open(path) as image:
+            assert image.format == "JPEG"
+            assert image.size == (768, 768)
+
+
 def test_bundled_assets_match_shared_manifest() -> None:
     data = manifest()
 
     assert data["version"] == 1
-    assert len(data["files"]) == 653
+    assert len(data["files"]) == 659
     assert len(manifest_sha256()) == 64
     assert asset_bundle_ready() is True
     assert card_image_path("spent-tea") == ASSET_DIR / "spent-tea.jpg"

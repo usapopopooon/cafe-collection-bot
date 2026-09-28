@@ -21,8 +21,8 @@ from cafe_collection.level_api import (
 
 logger = logging.getLogger(__name__)
 DEFAULT_READINESS_FILE = "/tmp/cafe-collection-bot.ready"
-EXPECTED_CATALOG_SIZE = 651
-EXPECTED_ASSET_COUNT = 653
+EXPECTED_CATALOG_SIZE = 657
+EXPECTED_ASSET_COUNT = 659
 STARTUP_API_RETRY_SECONDS = 5.0
 
 
