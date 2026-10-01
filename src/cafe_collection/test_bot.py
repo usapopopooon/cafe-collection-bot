@@ -13,8 +13,8 @@ from cafe_collection.level_api import CafeApiClient
 def _capabilities() -> dict[str, object]:
     return {
         "api_version": 4,
-        "catalog_size": 663,
-        "asset_count": 665,
+        "catalog_size": 669,
+        "asset_count": 671,
         "asset_manifest_sha256": manifest_sha256(),
         "paid_draw_cost_xp": 20,
         "hourly_draw_limit": 10,
@@ -39,7 +39,7 @@ def _capabilities() -> dict[str, object]:
             "MYTHIC": 1500,
         },
         "ranking_category_totals": {},
-        "set_count": 75,
+        "set_count": 76,
     }
 
 
@@ -196,6 +196,8 @@ async def test_setup_does_not_retry_incompatible_level_api(
         ("asset_count", 653),
         ("catalog_size", 657),
         ("asset_count", 659),
+        ("catalog_size", 663),
+        ("asset_count", 665),
     ],
 )
 async def test_setup_rejects_outdated_catalog_size(
