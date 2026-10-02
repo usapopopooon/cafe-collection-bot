@@ -249,6 +249,15 @@ HONG_KONG_MACAO_IMAGE_NAMES = {
     "macao-almond-cookie.jpg",
 }
 
+SINGAPORE_IMAGE_NAMES = {
+    "kopi-gu-you.jpg",
+    "bandung.jpg",
+    "pandan-chiffon-cake.jpg",
+    "ondeh-ondeh.jpg",
+    "steamed-kueh-lapis.jpg",
+    "ang-ku-kueh.jpg",
+}
+
 
 def test_european_brand_and_pantry_images_match_existing_card_dimensions() -> None:
     assert len(EUROPEAN_BRAND_AND_PANTRY_IMAGE_NAMES) == 35
@@ -306,11 +315,21 @@ def test_hong_kong_and_macao_images_are_available_as_square_jpegs() -> None:
             assert image.size == (768, 768)
 
 
+def test_singapore_images_are_available_as_square_jpegs() -> None:
+    assert len(SINGAPORE_IMAGE_NAMES) == 6
+    for image_name in SINGAPORE_IMAGE_NAMES:
+        path = card_image_path(image_name.removesuffix(".jpg"))
+        assert path == ASSET_DIR / image_name
+        with Image.open(path) as image:
+            assert image.format == "JPEG"
+            assert image.size == (768, 768)
+
+
 def test_bundled_assets_match_shared_manifest() -> None:
     data = manifest()
 
     assert data["version"] == 1
-    assert len(data["files"]) == 671
+    assert len(data["files"]) == 677
     assert len(manifest_sha256()) == 64
     assert asset_bundle_ready() is True
     assert card_image_path("spent-tea") == ASSET_DIR / "spent-tea.jpg"
