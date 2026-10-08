@@ -2,7 +2,7 @@
 
 `level-bot` から分離したカフェ・コレクション専用Discord Botです。
 
-Discordのカフェ機能、カード675種と共通画像2枚、サイト向け公開API、ヘルスAPI、CI、
+Discordのカフェ機能、カード681種と共通画像2枚、サイト向け公開API、ヘルスAPI、CI、
 Docker Composeをこのリポジトリが所有します。抽選・カード棚・ランキングは認証付き
 内部APIを通じて、level-botに残る共通の抽選・XP・コレクション状態を利用します。
 
@@ -35,6 +35,10 @@ Docker Composeをこのリポジトリが所有します。抽選・カード棚
 
 シンガポールで親しまれる飲み物と菓子6種の追加一覧と画像制作記録は
 [docs/menu-additions-2026-10-02-singapore.md](docs/menu-additions-2026-10-02-singapore.md)
+を参照してください。
+
+インド・スリランカ・ネパールの喫茶メニュー6種は
+[docs/menu-additions-2026-10-08-south-asia.md](docs/menu-additions-2026-10-08-south-asia.md)
 を参照してください。
 
 状態、取引、公開データ、DBテーブルの正本は `level-bot` に残しています。サイトが参照する

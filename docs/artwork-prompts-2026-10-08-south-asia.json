@@ -1,0 +1,32 @@
+[
+  {
+    "key": "south-indian-filter-coffee",
+    "source_file": "exec-198ef016-c2d6-48e7-85d4-3c36dae8345e.png",
+    "prompt": "Use case: photorealistic-natural\nAsset type: square 1024x1024 Cafe Collection collectible card artwork, one featured drink.\nScene/backdrop: a modest South Indian coffee-house tabletop with muted stone and warm wood, soft window daylight.\nPrimary request: freshly brewed South Indian filter coffee with milk, served in a small stainless-steel davara tumbler set. One polished cylindrical metal tumbler filled with rich light-brown coffee and a fine layer of froth sits inside a shallow stainless-steel saucer-like davara; both vessels completely visible, a little steam, realistic coffee surface and reflections. Close three-quarter editorial food photograph, tactile understated realism, shallow depth of field.\nConstraints: no people, no hands, no text, logos, labels, flags, borders, watermark or collage. No tea bags, espresso cup, latte art, giant mug or coffee beans as the main subject."
+  },
+  {
+    "key": "bun-maska",
+    "source_file": "exec-8504add2-61c0-457e-bdd1-aed00974739c.png",
+    "prompt": "Use case: photorealistic-natural\nAsset type: square 1024x1024 Cafe Collection card artwork, one featured food.\nScene/backdrop: modest Indian tea stall tabletop, small unbranded ceramic plate on warm wood, soft late-morning daylight.\nPrimary request: bun maska, a very soft golden round Indian bakery bun horizontally split and generously spread with pale creamy butter. Show one bun cut in two halves, its fluffy pale crumb and thick unmistakable butter layer facing camera, one half resting against the other. Close three-quarter editorial food photograph, realistic bakery texture, modest everyday atmosphere.\nConstraints: no people, hands, text, logos, labels, flags, borders, watermark or collage. Do not add jam, chutney, cheese, burger patty, savory filling, croissant layers or multiple dishes."
+  },
+  {
+    "key": "maalu-paan",
+    "source_file": "exec-67e25fc8-5b9b-4675-af7e-edc9a2512545.png",
+    "prompt": "Use case: photorealistic-natural\nAsset type: square 1024x1024 Cafe Collection card artwork, one featured savory bakery snack.\nScene/backdrop: small Sri Lankan bakery tea counter, plain ceramic plate on subtle warm countertop, natural window light.\nPrimary request: maalu paan, a Sri Lankan fish bun. Show two small golden triangular baked bread buns with soft bread crumb and modest glossy baked tops; one intact and one cleanly cut open revealing savory flaked fish and lightly spiced onion filling, visibly separate from the bread. The bread itself is triangular and pillowy, not a sealed deep-fried pastry. Three-quarter close-up editorial food photograph, realistic texture and understated café mood.\nConstraints: no people, hands, text, logos, labels, flags, borders, watermark or collage. No puff pastry shell, samosa, tuna sandwich, whole fish, raw fish, excessive curry sauce or extra dishes."
+  },
+  {
+    "key": "watalappan",
+    "source_file": "exec-3c728e56-7322-47b8-8083-d99df17b569b.png",
+    "prompt": "Use case: photorealistic-natural\nAsset type: square 1024x1024 Cafe Collection card artwork, one featured dessert.\nScene/backdrop: quiet Sri Lankan tea room tabletop, small plain earthenware bowl on weathered dark wood, warm natural daylight.\nPrimary request: traditional Sri Lankan watalappan, a small serving of smooth softly set deep caramel-brown coconut milk, egg, and kithul palm jaggery custard. Show one shallow round portion in an unadorned clay bowl, with a spoon-sized wedge removed to reveal moist dense custard interior, a few toasted cashew pieces on top, delicate surface sheen. Realistic editorial food photography, close three-quarter composition.\nConstraints: no people, hands, text, logos, labels, flags, borders, watermark or collage. No caramel flan syrup pool, chocolate pudding, whipped cream, cake crumb, parfait layers or oversized garnish."
+  },
+  {
+    "key": "sel-roti",
+    "source_file": "exec-02c78f02-0c9d-49aa-b7b7-6f4dfe0d7a87.png",
+    "prompt": "Use case: photorealistic-natural\nAsset type: square 1024x1024 Cafe Collection card artwork, one featured sweet bread.\nScene/backdrop: quiet Nepali neighborhood tea-house table, plain light ceramic plate on worn wood, natural window daylight.\nPrimary request: sel roti, traditional Nepali handmade ring-shaped fried rice bread. Show three medium thin irregular golden-brown rice-batter rings, gently overlapping on the plate, lightly crisp uneven edges and a fine airy rice crumb visible where one ring is broken. Distinct hollow centers and natural handmade irregularity, not uniform donuts. Photorealistic editorial food photograph, close three-quarter view, whole plate visible.\nConstraints: no people, hands, text, logos, flags, borders, watermark or collage. No sugar icing, sprinkles, jam, wheat donut dough, bagels, onion rings or fancy garnish."
+  },
+  {
+    "key": "yomari",
+    "source_file": "exec-41409a13-63f4-48fb-9f73-69688c5fc1b6.png",
+    "prompt": "Use case: photorealistic-natural\nAsset type: square 1024x1024 Cafe Collection card artwork, one featured sweet.\nScene/backdrop: small Newar tea-house tabletop in Nepal, simple dark ceramic plate on worn wood, soft warm window light.\nPrimary request: yomari, traditional Newar steamed rice-flour dumplings with dark chaku molasses and sesame filling. Show three small smooth ivory-white pointed fig-like steamed dumplings with a curved pinched tip, two intact and one cut open cleanly to expose a thick glossy dark-brown molasses filling and a few sesame seeds. Lightly moist rice-flour skin, no browning or frying, realistic handmade form, editorial food photograph close three-quarter view.\nConstraints: no people, hands, text, logos, flags, borders, watermark or collage. No fish, meat, dumpling pleats like gyoza, chocolate ganache, red-bean paste, syrup spilling everywhere or extra dishes."
+  }
+]
