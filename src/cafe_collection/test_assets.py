@@ -282,6 +282,19 @@ FIVE_REGIONS_IMAGE_NAMES = {
     "jamaican-coco-bread.jpg",
 }
 
+FOUR_MORE_REGIONS_IMAGE_NAMES = {
+    "filipino-kapeng-barako.jpg",
+    "filipino-ensaymada.jpg",
+    "filipino-bibingka.jpg",
+    "mexican-concha.jpg",
+    "mexican-bunuelo.jpg",
+    "bosnian-coffee.jpg",
+    "bosnian-tufahija.jpg",
+    "bosnian-hurmasice.jpg",
+    "brazilian-pao-de-queijo.jpg",
+    "brazilian-brigadeiro.jpg",
+}
+
 
 def test_european_brand_and_pantry_images_match_existing_card_dimensions() -> None:
     assert len(EUROPEAN_BRAND_AND_PANTRY_IMAGE_NAMES) == 35
@@ -369,11 +382,21 @@ def test_five_regional_images_are_available_as_square_jpegs() -> None:
             assert image.size == (768, 768)
 
 
+def test_four_more_regional_images_are_available_as_square_jpegs() -> None:
+    assert len(FOUR_MORE_REGIONS_IMAGE_NAMES) == 10
+    for image_name in FOUR_MORE_REGIONS_IMAGE_NAMES:
+        path = card_image_path(image_name.removesuffix(".jpg"))
+        assert path == ASSET_DIR / image_name
+        with Image.open(path) as image:
+            assert image.format == "JPEG"
+            assert image.size == (768, 768)
+
+
 def test_bundled_assets_match_shared_manifest() -> None:
     data = manifest()
 
     assert data["version"] == 1
-    assert len(data["files"]) == 695
+    assert len(data["files"]) == 705
     assert len(manifest_sha256()) == 64
     assert asset_bundle_ready() is True
     assert card_image_path("spent-tea") == ASSET_DIR / "spent-tea.jpg"
