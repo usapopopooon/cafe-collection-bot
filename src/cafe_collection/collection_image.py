@@ -13,6 +13,7 @@ from cafe_collection.level_api import CafeCollectionCard
 CELL_SIZE = 160
 COLUMNS = 5
 ROWS = 8
+PAGE_SIZE = COLUMNS * ROWS
 RARITY_LABELS = {"C": "N", "UC": "HN", "MYTHIC": "幻"}
 
 
@@ -76,10 +77,17 @@ def _render_page(cards: Sequence[CafeCollectionCard]) -> bytes:
     return output.getvalue()
 
 
+def render_collection_page(cards: Sequence[CafeCollectionCard], page: int) -> bytes:
+    """Render only the requested zero-based shelf page."""
+    start = page * PAGE_SIZE
+    if page < 0 or start >= len(cards):
+        raise IndexError("collection page is out of range")
+    return _render_page(cards[start : start + PAGE_SIZE])
+
+
 def render_collection_pages(cards: Sequence[CafeCollectionCard]) -> tuple[bytes, ...]:
-    """Render at most two Discord-sized pages for one rarity."""
-    page_size = COLUMNS * ROWS
+    """Render all Discord-sized pages for one rarity."""
     return tuple(
-        _render_page(cards[start : start + page_size])
-        for start in range(0, len(cards), page_size)
+        render_collection_page(cards, page)
+        for page in range((len(cards) + PAGE_SIZE - 1) // PAGE_SIZE)
     )

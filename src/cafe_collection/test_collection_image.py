@@ -1,4 +1,13 @@
-from cafe_collection.collection_image import render_collection_pages
+from collections.abc import Sequence
+
+import pytest
+
+from cafe_collection import collection_image
+from cafe_collection.collection_image import (
+    PAGE_SIZE,
+    render_collection_page,
+    render_collection_pages,
+)
 from cafe_collection.level_api import CafeCollectionCard
 
 
@@ -23,3 +32,21 @@ def test_collection_renderer_pages_and_hides_unowned_cards() -> None:
 
     assert len(pages) == 2
     assert all(page.startswith(b"\xff\xd8\xff") for page in pages)
+
+
+def test_collection_renderer_only_opens_requested_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cards = [_card(index, count=1) for index in range(PAGE_SIZE * 25 + 1)]
+    rendered: list[list[CafeCollectionCard]] = []
+
+    def render(page_cards: Sequence[CafeCollectionCard]) -> bytes:
+        rendered.append(list(page_cards))
+        return b"image"
+
+    monkeypatch.setattr(collection_image, "_render_page", render)
+
+    assert render_collection_page(cards, 25) == b"image"
+    assert rendered == [[cards[-1]]]
+    with pytest.raises(IndexError):
+        render_collection_page(cards, 26)
