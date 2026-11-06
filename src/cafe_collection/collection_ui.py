@@ -1230,6 +1230,125 @@ class BulkExchangeButton(discord.ui.Button[discord.ui.View]):
         )
 
 
+class RarityBulkExchangeButton(discord.ui.Button[discord.ui.View]):
+    def __init__(self, *, collection: CafeCollection, kind: RedemptionKind) -> None:
+        super().__init__(
+            label=("レアリティ別XP交換" if kind == "xp" else "レアリティ別メダル交換"),
+            emoji="♻️" if kind == "xp" else "☕",
+            style=(
+                discord.ButtonStyle.primary
+                if kind == "xp"
+                else discord.ButtonStyle.secondary
+            ),
+            row=4,
+        )
+        self.collection = collection
+        self.kind = kind
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        cards = [card for card in self.collection.cards if card.exchangeable_count > 0]
+        if not cards:
+            await interaction.response.send_message(
+                "交換できる重複カードがありません。", ephemeral=True
+            )
+            return
+        await interaction.response.send_message(
+            "交換するレアリティを選んでください。",
+            view=RarityBulkExchangeView(
+                guild_id=interaction.guild_id or 0,
+                user_id=interaction.user.id,
+                cards=cards,
+                kind=self.kind,
+            ),
+            ephemeral=True,
+        )
+
+
+class RarityBulkExchangeSelect(discord.ui.Select[discord.ui.View]):
+    def __init__(
+        self, *, cards: list[CafeCollectionCard], kind: RedemptionKind
+    ) -> None:
+        self.cards = cards
+        self.kind = kind
+        options: list[discord.SelectOption] = []
+        for rarity in RARITY_ORDER:
+            rarity_cards = [card for card in cards if card.rarity == rarity]
+            if not rarity_cards:
+                continue
+            quantity = sum(card.exchangeable_count for card in rarity_cards)
+            reward = sum(
+                card.exchangeable_count
+                * (card.exchange_xp if kind == "xp" else card.exchange_medals)
+                for card in rarity_cards
+            )
+            currency = "XP" if kind == "xp" else "メダル"
+            options.append(
+                discord.SelectOption(
+                    label=f"{_rarity_label(rarity)}（{quantity:,}枚）",
+                    value=rarity,
+                    description=f"受取 {reward:,} {currency}",
+                )
+            )
+        super().__init__(
+            placeholder="まとめて交換するレアリティを選ぶ", options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        rarity = self.values[0]
+        cards = [card for card in self.cards if card.rarity == rarity]
+        if not cards:
+            await interaction.response.send_message(
+                "そのレアリティに交換できる重複カードはありません。",
+                ephemeral=True,
+            )
+            return
+        quantities = {card.key: card.exchangeable_count for card in cards}
+        quantity = sum(quantities.values())
+        reward = sum(
+            card.exchangeable_count
+            * (card.exchange_xp if self.kind == "xp" else card.exchange_medals)
+            for card in cards
+        )
+        currency = "XP" if self.kind == "xp" else "カフェメダル"
+        content = (
+            f"**{_rarity_label(rarity)}** の交換可能な重複をまとめて"
+            f"{currency}へ交換します。\n"
+            f"対象: **{len(cards)}種・{quantity:,}枚**\n"
+            f"受取: **{reward:,} {currency}**\n"
+            "**各カードの最初の1枚と保護カードは残ります。**"
+        )
+        if self.kind == "medals":
+            content += "\nXPには交換されません。"
+        await interaction.response.send_message(
+            content,
+            view=RedemptionConfirmView(
+                guild_id=interaction.guild_id or 0,
+                user_id=interaction.user.id,
+                quantities=quantities,
+                kind=self.kind,
+                confirm_label=f"{_rarity_label(rarity)}の重複を{currency}へ交換する",
+                unavailable_message=(
+                    "所持数が変わったため交換できませんでした。"
+                    "コレクションを開き直してください。"
+                ),
+            ),
+            ephemeral=True,
+        )
+
+
+class RarityBulkExchangeView(UserView):
+    def __init__(
+        self,
+        *,
+        guild_id: int,
+        user_id: int,
+        cards: list[CafeCollectionCard],
+        kind: RedemptionKind,
+    ) -> None:
+        super().__init__(guild_id=guild_id, user_id=user_id)
+        self.add_item(RarityBulkExchangeSelect(cards=cards, kind=kind))
+
+
 class CosmeticSelect(discord.ui.Select[discord.ui.View]):
     def __init__(self, *, cosmetics: list[CafeCosmetic]) -> None:
         self.cosmetics = {item.key: item for item in cosmetics}
@@ -1510,9 +1629,10 @@ class CollectionActionsView(UserView):
     ) -> None:
         super().__init__(guild_id=guild_id, user_id=user_id, timeout=180)
         owned_cards = [card for card in collection.cards if card.count > 0]
+        has_exchangeable = any(card.exchangeable_count > 0 for card in collection.cards)
         if owned_cards:
             self.add_item(RarityPageSelect(cards=owned_cards, action="favorite"))
-        if any(card.exchangeable_count > 0 for card in collection.cards):
+        if has_exchangeable:
             self.add_item(
                 ActionButton(action="redeem_xp", collection=collection, row=1)
             )
@@ -1532,3 +1652,8 @@ class CollectionActionsView(UserView):
         if owned_cards:
             self.add_item(ActionButton(action="protect", collection=collection, row=3))
         self.add_item(SetMenuButton(collection=collection))
+        if has_exchangeable:
+            self.add_item(RarityBulkExchangeButton(collection=collection, kind="xp"))
+            self.add_item(
+                RarityBulkExchangeButton(collection=collection, kind="medals")
+            )
