@@ -30,8 +30,12 @@ from cafe_collection.collection_ui import (
     DISCORD_EMBED_TOTAL_LIMIT,
     EMBED_DESCRIPTION_BUDGET,
     EMBED_TOTAL_BUDGET,
+    CardChoiceView,
     CollectionActionsView,
+    CustomQuantityModal,
+    RarityPageView,
     RedemptionConfirmView,
+    ShelfPageView,
     _collection_summary,
     show_full_collection,
 )
@@ -405,7 +409,7 @@ async def test_paid_confirmation_reloads_member_roles_before_drawing() -> None:
     )
 
 
-async def test_full_collection_wires_actor_and_all_rarity_shelves(
+async def test_full_collection_shows_actions_before_rendering_shelf_pages(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     interaction = _interaction(interaction_id=5004)
@@ -452,17 +456,34 @@ async def test_full_collection_wires_actor_and_all_rarity_shelves(
             ],
         )
     )
-    rendered_cards: list[CafeCollectionCard] = []
+    rendered_cards: list[list[CafeCollectionCard]] = []
 
-    def render(cards: list[CafeCollectionCard]) -> tuple[bytes, ...]:
-        rendered_cards.extend(cards)
-        return (b"\xff\xd8\xff\xd9",) if cards else ()
+    def render(cards: list[CafeCollectionCard], page: int) -> bytes:
+        assert page == 0
+        rendered_cards.append(cards)
+        return b"\xff\xd8\xff\xd9"
 
-    monkeypatch.setattr(collection_ui_module, "render_collection_pages", render)
+    monkeypatch.setattr(collection_ui_module, "render_collection_page", render)
     await show_full_collection(interaction, api=cast(CafeApiClient, api))
 
     api.collection.assert_awaited_once_with(actor)
-    assert rendered_cards == [selected_card, other_card]
+    assert rendered_cards == [[selected_card]]
+    send = cast(AsyncMock, interaction.followup.send)
+    assert send.await_count == 2
+    assert isinstance(send.await_args_list[0].kwargs["view"], CollectionActionsView)
+    shelf = send.await_args_list[1].kwargs["view"]
+    assert isinstance(shelf, ShelfPageView)
+    assert {option.value for option in cast(Any, shelf.children[-1]).options} == {
+        "C",
+        "R",
+    }
+
+    next_interaction = _interaction(interaction_id=5008)
+    cast(Any, next_interaction).edit_original_response = AsyncMock()
+    await shelf.show_page(next_interaction, rarity="R", page=0)
+
+    assert rendered_cards == [[selected_card], [other_card]]
+    cast(AsyncMock, next_interaction.edit_original_response).assert_awaited_once()
 
 
 async def test_full_collection_keeps_large_shelf_embeds_within_discord_limits(
@@ -497,16 +518,15 @@ async def test_full_collection_keeps_large_shelf_embeds_within_discord_limits(
 
     monkeypatch.setattr(
         collection_ui_module,
-        "render_collection_pages",
-        lambda rendered_cards: (b"\xff\xd8\xff\xd9",) if rendered_cards else (),
+        "render_collection_page",
+        lambda _rendered_cards, _page: b"\xff\xd8\xff\xd9",
     )
 
     await show_full_collection(interaction, api=cast(CafeApiClient, api))
 
     send = cast(AsyncMock, interaction.followup.send)
-    assert send.await_count == 1
-    assert send.await_args is not None
-    sent_embeds = send.await_args.kwargs["embeds"]
+    assert send.await_count == 2
+    sent_embeds = [call.kwargs["embed"] for call in send.await_args_list]
     assert sent_embeds[0].description is not None
     assert "棚画像で確認できます" in sent_embeds[0].description
     for embed in sent_embeds:
@@ -536,6 +556,53 @@ async def test_full_collection_uses_existing_bot_error_message() -> None:
         "カード棚の読み込みに失敗しました。時間をおいてもう一度お試しください。",
         ephemeral=True,
     )
+
+
+async def test_shelf_image_failure_keeps_exchange_actions_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    card = CafeCollectionCard(
+        key="spent-tea",
+        name="出がらしティー",
+        rarity="C",
+        description="説明",
+        image_filename="spent-tea.jpg",
+        count=2,
+        redeemable_count=1,
+        lifetime_count=2,
+        is_protected=False,
+        exchangeable_count=1,
+        exchange_xp=5,
+        exchange_medals=1,
+    )
+    api = Mock(spec=CafeApiClient)
+    api.authorize = AsyncMock()
+    api.collection = AsyncMock(
+        return_value=CafeCollection(
+            cards=[card],
+            endgame_pity_active=False,
+            endgame_pity_duplicate_draws=100,
+            mastery_tiers=[],
+        )
+    )
+
+    def fail(_cards: list[CafeCollectionCard], _page: int) -> bytes:
+        raise ValueError("image unavailable")
+
+    monkeypatch.setattr(collection_ui_module, "render_collection_page", fail)
+    interaction = _interaction(interaction_id=5014)
+
+    await show_full_collection(interaction, api=cast(CafeApiClient, api))
+
+    send = cast(AsyncMock, interaction.followup.send)
+    assert send.await_count == 2
+    actions = send.await_args_list[0].kwargs["view"]
+    assert isinstance(actions, CollectionActionsView)
+    assert any(
+        getattr(item, "label", None) == "重複を選んでXP交換"
+        for item in actions.children
+    )
+    assert "棚画像を表示できませんでした" in send.await_args_list[1].args[0]
 
 
 async def test_collection_button_reports_unexpected_loading_failures(
@@ -1013,6 +1080,158 @@ async def test_collection_actions_include_every_old_collection_operation() -> No
         discord.ButtonStyle.secondary,
     ]
     assert [button.row for button in buttons] == [1, 1, 2, 2, 3, 3]
+
+
+async def test_large_collection_keeps_discord_select_options_within_limit() -> None:
+    cards = [
+        CafeCollectionCard(
+            key=f"card-{index}",
+            name=f"カード{index}",
+            rarity="C",
+            description="説明",
+            image_filename=f"card-{index}.jpg",
+            count=2,
+            redeemable_count=1,
+            lifetime_count=2,
+            is_protected=False,
+            exchangeable_count=1,
+            exchange_xp=5,
+            exchange_medals=1,
+        )
+        for index in range(1001)
+    ]
+    collection = CafeCollection(
+        cards=cards,
+        endgame_pity_active=False,
+        endgame_pity_duplicate_draws=100,
+        mastery_tiers=[],
+    )
+    view = CollectionActionsView(guild_id=1001, user_id=11, collection=collection)
+
+    options = [
+        component["options"]
+        for row in view.to_components()
+        for component in row["components"]
+        if "options" in component
+    ]
+    assert options
+    assert all(1 <= len(group) <= 25 for group in options)
+
+    redeem = next(
+        item
+        for item in view.children
+        if getattr(item, "label", None) == "重複を選んでXP交換"
+    )
+    interaction = _interaction(interaction_id=5010)
+    await redeem.callback(interaction)
+    send_args = cast(AsyncMock, interaction.response.send_message).await_args
+    assert send_args is not None
+    rarity_view = send_args.kwargs["view"]
+    assert isinstance(rarity_view, RarityPageView)
+    assert all(
+        len(component["options"]) <= 25
+        for row in rarity_view.to_components()
+        for component in row["components"]
+        if "options" in component
+    )
+
+    seen = set()
+    for page in range(41):
+        choice = CardChoiceView(
+            guild_id=1001, user_id=11, cards=cards, action="redeem_xp", page=page
+        )
+        seen.update(cast(Any, choice.children[-1]).cards_by_key)
+        assert 1 <= len(cast(Any, choice.children[-1]).options) <= 25
+    assert seen == {card.key for card in cards}
+
+    first_choice = CardChoiceView(
+        guild_id=1001, user_id=11, cards=cards, action="redeem_xp"
+    )
+    next_interaction = _interaction(interaction_id=5015)
+    await first_choice.next_page.callback(next_interaction)
+    edit_args = cast(AsyncMock, next_interaction.response.edit_message).await_args
+    assert edit_args is not None
+    second_choice = edit_args.kwargs["view"]
+    assert isinstance(second_choice, CardChoiceView)
+    assert second_choice.page == 1
+    assert "card-25" in cast(Any, second_choice.children[-1]).cards_by_key
+
+
+async def test_card_search_finds_a_late_duplicate() -> None:
+    cards = [
+        CafeCollectionCard(
+            key=f"card-{index}",
+            name=f"カード{index}",
+            rarity="C",
+            description="説明",
+            image_filename=f"card-{index}.jpg",
+            count=2,
+            redeemable_count=1,
+            lifetime_count=2,
+            is_protected=False,
+            exchangeable_count=1,
+            exchange_xp=5,
+            exchange_medals=1,
+        )
+        for index in range(1000)
+    ]
+    view = RarityPageView(guild_id=1001, user_id=11, cards=cards, action="redeem_xp")
+    search = next(
+        item
+        for item in view.children
+        if getattr(item, "label", None) == "カード名で探す"
+    )
+    interaction = _interaction(interaction_id=5011)
+    cast(Any, interaction.response).send_modal = AsyncMock()
+    await search.callback(interaction)
+    modal_args = cast(AsyncMock, interaction.response.send_modal).await_args
+    assert modal_args is not None
+    modal = modal_args.args[0]
+    modal.query._value = "カード999"
+    api = Mock(spec=CafeApiClient)
+    api.authorize = AsyncMock()
+    result_interaction = _interaction(interaction_id=5012)
+    cast(Any, result_interaction.client).cafe_api = api
+
+    await modal.on_submit(result_interaction)
+
+    result_args = cast(AsyncMock, result_interaction.response.send_message).await_args
+    assert result_args is not None
+    result = result_args.kwargs["view"]
+    assert isinstance(result, CardChoiceView)
+    assert list(cast(Any, result.children[-1]).cards_by_key) == ["card-999"]
+
+
+async def test_custom_quantity_accepts_more_than_four_digits() -> None:
+    card = CafeCollectionCard(
+        key="spent-tea",
+        name="出がらしティー",
+        rarity="C",
+        description="説明",
+        image_filename="spent-tea.jpg",
+        count=100001,
+        redeemable_count=100000,
+        lifetime_count=100001,
+        is_protected=False,
+        exchangeable_count=100000,
+        exchange_xp=5,
+        exchange_medals=1,
+    )
+    modal = CustomQuantityModal(guild_id=1001, user_id=11, card=card)
+    assert modal.quantity.max_length == 6
+    modal.quantity._value = "50000"
+    api = Mock(spec=CafeApiClient)
+    api.authorize = AsyncMock()
+    interaction = _interaction(interaction_id=5013)
+    cast(Any, interaction.client).cafe_api = api
+
+    await modal.on_submit(interaction)
+
+    confirm_args = cast(AsyncMock, interaction.response.send_message).await_args
+    assert confirm_args is not None
+    confirm = confirm_args.kwargs["view"]
+    assert isinstance(confirm, RedemptionConfirmView)
+    assert confirm.quantities == {"spent-tea": 50000}
 
 
 async def test_xp_exchange_uses_confirmation_interaction_as_idempotency_key() -> None:

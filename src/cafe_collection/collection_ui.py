@@ -11,7 +11,11 @@ from uuid import uuid4
 import discord
 from discord.ext import commands
 
-from cafe_collection.collection_image import RARITY_LABELS, render_collection_pages
+from cafe_collection.collection_image import (
+    PAGE_SIZE,
+    RARITY_LABELS,
+    render_collection_page,
+)
 from cafe_collection.discord_context import (
     actor_from_interaction,
     api_from_interaction,
@@ -29,6 +33,7 @@ from cafe_collection.level_api import (
 )
 
 RARITY_ORDER = ("C", "UC", "R", "SR", "SSR", "UR", "MYTHIC")
+CARD_SELECT_PAGE_SIZE = 25
 Action = Literal["favorite", "redeem_xp", "protect"]
 RedemptionKind = Literal["xp", "medals"]
 logger = logging.getLogger(__name__)
@@ -354,77 +359,161 @@ async def show_full_collection(
             ephemeral=True,
         )
         return
-    rendered: list[tuple[str, int, int, bytes]] = []
-    try:
-        for rarity in RARITY_ORDER:
-            cards = [card for card in collection.cards if card.rarity == rarity]
-            pages = await asyncio.to_thread(render_collection_pages, cards)
-            rendered.extend(
-                (rarity, page, len(pages), image)
-                for page, image in enumerate(pages, start=1)
-            )
-    except (OSError, ValueError):
-        logger.exception("Failed to render Cafe collection shelf")
-        rendered = []
-    embeds: list[discord.Embed] = []
-    files: list[discord.File] = []
     summary = _collection_summary(
         collection,
         display_name=interaction.user.display_name,
     )
+    view = CollectionActionsView(
+        guild_id=int(actor.guild_id),
+        user_id=int(actor.user_id),
+        collection=collection,
+    )
+    await interaction.followup.send(embed=summary, view=view, ephemeral=True)
+    first_rarity = next(
+        (
+            rarity
+            for rarity in RARITY_ORDER
+            if any(card.rarity == rarity for card in collection.cards)
+        ),
+        None,
+    )
+    if first_rarity is None:
+        return
     try:
-        if not rendered:
-            embeds.append(summary)
-        for index, (rarity, page, page_count, image) in enumerate(rendered):
-            filename = f"collection-{rarity.lower()}-{page}.jpg"
-            files.append(discord.File(BytesIO(image), filename=filename))
-            if index == 0:
-                embed = summary
-            else:
-                cards = [card for card in collection.cards if card.rarity == rarity]
-                embed = discord.Embed(
-                    title=(
-                        f"{_rarity_label(rarity)} カード棚"
-                        + (f" {page}/{page_count}" if page_count > 1 else "")
-                    ),
-                    description=(
-                        f"所持 {sum(card.count > 0 for card in cards)}/{len(cards)}種"
-                    ),
-                    color=DEFAULT_EMBED_COLOR,
-                )
-            embed.set_image(url=f"attachment://{filename}")
-            embed.set_footer(
-                text=(
-                    f"収集 {sum(card.count > 0 for card in collection.cards)}/"
-                    f"{len(collection.cards)}種 · 最初の1枚と保護カードは残ります"
-                    "（交換対象は未保護の2枚目以降）"
-                )
-            )
-            embeds.append(embed)
-        embeds = [_fit_embed_to_discord_limits(embed) for embed in embeds]
-        view = CollectionActionsView(
-            guild_id=int(actor.guild_id),
-            user_id=int(actor.user_id),
-            collection=collection,
+        image = await asyncio.to_thread(
+            render_collection_page,
+            [card for card in collection.cards if card.rarity == first_rarity],
+            0,
         )
-        for start in range(0, len(embeds), 10):
-            last = start + 10 >= len(embeds)
-            if last:
-                await interaction.followup.send(
-                    embeds=embeds[start : start + 10],
-                    files=files[start : start + 10],
-                    view=view,
-                    ephemeral=True,
-                )
-            else:
-                await interaction.followup.send(
-                    embeds=embeds[start : start + 10],
-                    files=files[start : start + 10],
-                    ephemeral=True,
-                )
+    except (OSError, ValueError, IndexError):
+        logger.exception("Failed to render Cafe collection shelf")
+        await interaction.followup.send(
+            "棚画像を表示できませんでした。上のボタンから交換などの操作はできます。",
+            ephemeral=True,
+        )
+        return
+    file = discord.File(BytesIO(image), filename="collection-shelf.jpg")
+    try:
+        await interaction.followup.send(
+            embed=_shelf_page_embed(collection, first_rarity, 0),
+            file=file,
+            view=ShelfPageView(
+                guild_id=int(actor.guild_id),
+                user_id=int(actor.user_id),
+                collection=collection,
+                rarity=first_rarity,
+                page=0,
+            ),
+            ephemeral=True,
+        )
     finally:
-        for file in files:
+        file.close()
+
+
+def _shelf_page_embed(
+    collection: CafeCollection, rarity: str, page: int
+) -> discord.Embed:
+    cards = [card for card in collection.cards if card.rarity == rarity]
+    page_count = (len(cards) + PAGE_SIZE - 1) // PAGE_SIZE
+    embed = discord.Embed(
+        title=f"{_rarity_label(rarity)} カード棚 {page + 1}/{page_count}",
+        description=f"所持 {sum(card.count > 0 for card in cards)}/{len(cards)}種",
+        color=DEFAULT_EMBED_COLOR,
+    )
+    embed.set_image(url="attachment://collection-shelf.jpg")
+    embed.set_footer(text="レアリティを選ぶか、前後のページへ移動できます。")
+    return _fit_embed_to_discord_limits(embed)
+
+
+class ShelfRaritySelect(discord.ui.Select[discord.ui.View]):
+    def __init__(self, *, collection: CafeCollection) -> None:
+        super().__init__(
+            placeholder="棚画像のレアリティを選ぶ",
+            options=[
+                discord.SelectOption(label=_rarity_label(rarity), value=rarity)
+                for rarity in RARITY_ORDER
+                if any(card.rarity == rarity for card in collection.cards)
+            ],
+            row=0,
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        view = self.view
+        if isinstance(view, ShelfPageView):
+            await view.show_page(interaction, rarity=self.values[0], page=0)
+
+
+class ShelfPageView(UserView):
+    def __init__(
+        self,
+        *,
+        guild_id: int,
+        user_id: int,
+        collection: CafeCollection,
+        rarity: str,
+        page: int,
+    ) -> None:
+        super().__init__(guild_id=guild_id, user_id=user_id, timeout=180)
+        self.collection = collection
+        self.rarity = rarity
+        self.page = page
+        page_count = self.page_count(rarity)
+        self.add_item(ShelfRaritySelect(collection=collection))
+        self.previous.disabled = page == 0
+        self.next_page.disabled = page + 1 >= page_count
+
+    def page_count(self, rarity: str) -> int:
+        count = sum(card.rarity == rarity for card in self.collection.cards)
+        return (count + PAGE_SIZE - 1) // PAGE_SIZE
+
+    async def show_page(
+        self, interaction: discord.Interaction, *, rarity: str, page: int
+    ) -> None:
+        await interaction.response.defer()
+        cards = [card for card in self.collection.cards if card.rarity == rarity]
+        if not 0 <= page < self.page_count(rarity):
+            await interaction.followup.send("そのページはありません。", ephemeral=True)
+            return
+        try:
+            image = await asyncio.to_thread(render_collection_page, cards, page)
+        except (OSError, ValueError, IndexError):
+            logger.exception("Failed to render Cafe collection shelf page")
+            await interaction.followup.send(
+                "棚画像を表示できませんでした。交換などの操作は続けられます。",
+                ephemeral=True,
+            )
+            return
+        file = discord.File(BytesIO(image), filename="collection-shelf.jpg")
+        try:
+            await interaction.edit_original_response(
+                embed=_shelf_page_embed(self.collection, rarity, page),
+                attachments=[file],
+                view=ShelfPageView(
+                    guild_id=self.guild_id,
+                    user_id=self.user_id,
+                    collection=self.collection,
+                    rarity=rarity,
+                    page=page,
+                ),
+            )
+        finally:
             file.close()
+
+    @discord.ui.button(label="前のページ", style=discord.ButtonStyle.secondary, row=1)
+    async def previous(
+        self,
+        interaction: discord.Interaction,
+        _button: discord.ui.Button[discord.ui.View],
+    ) -> None:
+        await self.show_page(interaction, rarity=self.rarity, page=self.page - 1)
+
+    @discord.ui.button(label="次のページ", style=discord.ButtonStyle.secondary, row=1)
+    async def next_page(
+        self,
+        interaction: discord.Interaction,
+        _button: discord.ui.Button[discord.ui.View],
+    ) -> None:
+        await self.show_page(interaction, rarity=self.rarity, page=self.page + 1)
 
 
 def _eligible_cards(
@@ -500,21 +589,13 @@ class RarityPageSelect(discord.ui.Select[discord.ui.View]):
         options: list[discord.SelectOption] = []
         for rarity in RARITY_ORDER:
             rarity_cards = [card for card in cards if card.rarity == rarity]
-            page_count = (len(rarity_cards) + 24) // 25
-            options.extend(
-                discord.SelectOption(
-                    label=(
-                        f"{_rarity_label(rarity)}（{len(rarity_cards)}種）"
-                        if page_count == 1
-                        else (
-                            f"{_rarity_label(rarity)}（{len(rarity_cards)}種・"
-                            f"{page + 1}/{page_count}）"
-                        )
-                    ),
-                    value=f"{rarity}:{page}",
+            if rarity_cards:
+                options.append(
+                    discord.SelectOption(
+                        label=f"{_rarity_label(rarity)}（{len(rarity_cards)}種）",
+                        value=rarity,
+                    )
                 )
-                for page in range(page_count)
-            )
         action_label = {
             "favorite": "お気に入り",
             "redeem_xp": "交換",
@@ -526,23 +607,28 @@ class RarityPageSelect(discord.ui.Select[discord.ui.View]):
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        rarity, _, page_value = self.values[0].partition(":")
-        page = int(page_value)
+        rarity = self.values[0]
         cards = [card for card in self.cards if card.rarity == rarity]
         await interaction.response.send_message(
-            {
-                "favorite": "お気に入りにするカードを選んでください。",
-                "redeem_xp": "交換するカードを1種類選んでください。",
-                "protect": "保護または保護解除するカードを選んでください。",
-            }[self.action],
+            _card_choice_message(self.action, 0, len(cards)),
             view=CardChoiceView(
                 guild_id=interaction.guild_id or 0,
                 user_id=interaction.user.id,
-                cards=cards[page * 25 : (page + 1) * 25],
+                cards=cards,
                 action=self.action,
             ),
             ephemeral=True,
         )
+
+
+def _card_choice_message(action: Action, page: int, count: int) -> str:
+    prompt = {
+        "favorite": "お気に入りにするカードを選んでください。",
+        "redeem_xp": "交換するカードを1種類選んでください。",
+        "protect": "保護または保護解除するカードを選んでください。",
+    }[action]
+    page_count = (count + CARD_SELECT_PAGE_SIZE - 1) // CARD_SELECT_PAGE_SIZE
+    return f"{prompt} {page + 1}/{page_count}ページ（全{count}種）"
 
 
 class RarityPageView(UserView):
@@ -556,10 +642,92 @@ class RarityPageView(UserView):
     ) -> None:
         super().__init__(guild_id=guild_id, user_id=user_id)
         self.add_item(RarityPageSelect(cards=cards, action=action))
+        self.add_item(CardSearchButton(cards=cards, action=action))
+
+
+class CardSearchButton(discord.ui.Button[discord.ui.View]):
+    def __init__(self, *, cards: list[CafeCollectionCard], action: Action) -> None:
+        super().__init__(
+            label="カード名で探す",
+            style=discord.ButtonStyle.secondary,
+            row=1,
+        )
+        self.cards = cards
+        self.action = action
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_modal(
+            CardSearchModal(
+                guild_id=interaction.guild_id or 0,
+                user_id=interaction.user.id,
+                cards=self.cards,
+                action=self.action,
+            )
+        )
+
+
+class CardSearchModal(discord.ui.Modal, title="カード名で探す"):
+    query: discord.ui.TextInput[CardSearchModal] = discord.ui.TextInput(
+        label="カード名", placeholder="名前の一部を入力", min_length=1, max_length=100
+    )
+
+    def __init__(
+        self,
+        *,
+        guild_id: int,
+        user_id: int,
+        cards: list[CafeCollectionCard],
+        action: Action,
+    ) -> None:
+        super().__init__()
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.cards = cards
+        self.action = action
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "本人だけが操作できます。", ephemeral=True
+            )
+            return
+        context = _actor_api(interaction)
+        if context is None or int(context[0].guild_id) != self.guild_id:
+            await interaction.response.send_message(
+                "このサーバーでは利用できません。", ephemeral=True
+            )
+            return
+        actor, api = context
+        if not await ensure_feature_access(interaction, api, actor):
+            return
+        query = self.query.value.strip().casefold()
+        matches = [
+            card
+            for card in self.cards
+            if query and (query in card.name.casefold() or query in card.key.casefold())
+        ]
+        if not matches:
+            await interaction.response.send_message(
+                "該当するカードがありません。別の名前で探してください。",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_message(
+            _card_choice_message(self.action, 0, len(matches)),
+            view=CardChoiceView(
+                guild_id=self.guild_id,
+                user_id=self.user_id,
+                cards=matches,
+                action=self.action,
+            ),
+            ephemeral=True,
+        )
 
 
 class CardChoiceSelect(discord.ui.Select[discord.ui.View]):
     def __init__(self, *, cards: list[CafeCollectionCard], action: Action) -> None:
+        if not 1 <= len(cards) <= CARD_SELECT_PAGE_SIZE:
+            raise ValueError("card choice must contain 1 to 25 cards")
         self.cards_by_key = {card.key: card for card in cards}
         self.action = action
         super().__init__(
@@ -666,9 +834,58 @@ class CardChoiceView(UserView):
         user_id: int,
         cards: list[CafeCollectionCard],
         action: Action,
+        page: int = 0,
     ) -> None:
         super().__init__(guild_id=guild_id, user_id=user_id)
-        self.add_item(CardChoiceSelect(cards=cards, action=action))
+        self.cards = cards
+        self.action = action
+        self.page = page
+        self.page_count = (
+            len(cards) + CARD_SELECT_PAGE_SIZE - 1
+        ) // CARD_SELECT_PAGE_SIZE
+        if not 0 <= page < self.page_count:
+            raise ValueError("card choice page is out of range")
+        start = page * CARD_SELECT_PAGE_SIZE
+        self.add_item(
+            CardChoiceSelect(
+                cards=cards[start : start + CARD_SELECT_PAGE_SIZE], action=action
+            )
+        )
+        self.previous.disabled = page == 0
+        self.next_page.disabled = page + 1 >= self.page_count
+
+    async def show_page(self, interaction: discord.Interaction, page: int) -> None:
+        if not 0 <= page < self.page_count:
+            await interaction.response.send_message(
+                "そのページはありません。", ephemeral=True
+            )
+            return
+        await interaction.response.edit_message(
+            content=_card_choice_message(self.action, page, len(self.cards)),
+            view=CardChoiceView(
+                guild_id=self.guild_id,
+                user_id=self.user_id,
+                cards=self.cards,
+                action=self.action,
+                page=page,
+            ),
+        )
+
+    @discord.ui.button(label="前のページ", style=discord.ButtonStyle.secondary, row=1)
+    async def previous(
+        self,
+        interaction: discord.Interaction,
+        _button: discord.ui.Button[discord.ui.View],
+    ) -> None:
+        await self.show_page(interaction, self.page - 1)
+
+    @discord.ui.button(label="次のページ", style=discord.ButtonStyle.secondary, row=1)
+    async def next_page(
+        self,
+        interaction: discord.Interaction,
+        _button: discord.ui.Button[discord.ui.View],
+    ) -> None:
+        await self.show_page(interaction, self.page + 1)
 
 
 class RedemptionConfirmView(UserView):
@@ -823,7 +1040,7 @@ async def _send_redemption_confirmation(
 
 class CustomQuantityModal(discord.ui.Modal, title="交換する重複枚数"):
     quantity: discord.ui.TextInput[CustomQuantityModal] = discord.ui.TextInput(
-        label="枚数", placeholder="1", min_length=1, max_length=4
+        label="枚数", placeholder="1", min_length=1, max_length=4000
     )
 
     def __init__(
@@ -837,6 +1054,7 @@ class CustomQuantityModal(discord.ui.Modal, title="交換する重複枚数"):
         self.guild_id = guild_id
         self.user_id = user_id
         self.card = card
+        self.quantity.max_length = min(4000, len(str(card.exchangeable_count)))
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.user_id:
@@ -853,10 +1071,14 @@ class CustomQuantityModal(discord.ui.Modal, title="交換する重複枚数"):
         actor, api = context
         if not await ensure_feature_access(interaction, api, actor):
             return
-        try:
-            quantity = int(self.quantity.value)
-        except ValueError:
-            quantity = 0
+        value = self.quantity.value.strip()
+        quantity = (
+            int(value)
+            if value.isascii()
+            and value.isdecimal()
+            and len(value) <= len(str(self.card.exchangeable_count))
+            else 0
+        )
         if not 1 <= quantity <= self.card.exchangeable_count:
             await interaction.response.send_message(
                 f"1〜{self.card.exchangeable_count} の枚数を入力してください。",
