@@ -33,6 +33,7 @@ from cafe_collection.collection_ui import (
     CardChoiceView,
     CollectionActionsView,
     CustomQuantityModal,
+    RarityBulkExchangeView,
     RarityPageView,
     RedemptionConfirmView,
     ShelfPageView,
@@ -1004,7 +1005,7 @@ def test_collection_summary_matches_old_bot_details_and_pity_conditions() -> Non
     ]
 
 
-async def test_collection_actions_include_every_old_collection_operation() -> None:
+async def test_collection_actions_keep_existing_and_add_rarity_exchange() -> None:
     card = CafeCollectionCard(
         key="spent-tea",
         name="出がらしティー",
@@ -1056,6 +1057,8 @@ async def test_collection_actions_include_every_old_collection_operation() -> No
         "全重複をメダル交換",
         "メダル・棚テーマ",
         "セットメニュー",
+        "レアリティ別XP交換",
+        "レアリティ別メダル交換",
     }
     rarity_select = view.children[0]
     assert isinstance(rarity_select, discord.ui.Select)
@@ -1070,6 +1073,8 @@ async def test_collection_actions_include_every_old_collection_operation() -> No
         "メダル・棚テーマ",
         "カード保護（名前検索）",
         "セットメニュー",
+        "レアリティ別XP交換",
+        "レアリティ別メダル交換",
     ]
     assert [button.style for button in buttons] == [
         discord.ButtonStyle.primary,
@@ -1078,8 +1083,217 @@ async def test_collection_actions_include_every_old_collection_operation() -> No
         discord.ButtonStyle.secondary,
         discord.ButtonStyle.secondary,
         discord.ButtonStyle.secondary,
+        discord.ButtonStyle.primary,
+        discord.ButtonStyle.secondary,
     ]
-    assert [button.row for button in buttons] == [1, 1, 2, 2, 3, 3]
+    assert [button.row for button in buttons] == [1, 1, 2, 2, 3, 3, 4, 4]
+    components = view.to_components()
+    assert len(components) == 5
+    assert all(1 <= len(row["components"]) <= 5 for row in components)
+
+
+async def test_rarity_exchange_is_hidden_without_exchangeable_duplicates() -> None:
+    card = CafeCollectionCard(
+        key="protected-tea",
+        name="保護したお茶",
+        rarity="C",
+        description="説明",
+        image_filename="protected-tea.jpg",
+        count=3,
+        redeemable_count=2,
+        lifetime_count=3,
+        is_protected=True,
+        exchangeable_count=0,
+    )
+    collection = CafeCollection(
+        cards=[card],
+        endgame_pity_active=False,
+        endgame_pity_duplicate_draws=100,
+        mastery_tiers=[],
+    )
+
+    view = CollectionActionsView(guild_id=1001, user_id=11, collection=collection)
+
+    assert not any("交換" in str(getattr(item, "label", "")) for item in view.children)
+
+
+async def test_existing_all_duplicate_exchange_still_covers_every_rarity() -> None:
+    cards = [
+        CafeCollectionCard(
+            key=f"{rarity.lower()}-card",
+            name=f"{rarity}カード",
+            rarity=rarity,
+            description="説明",
+            image_filename=f"{rarity.lower()}-card.jpg",
+            count=exchangeable + 1,
+            redeemable_count=exchangeable,
+            lifetime_count=exchangeable + 1,
+            is_protected=False,
+            exchangeable_count=exchangeable,
+            exchange_xp=5,
+            exchange_medals=1,
+        )
+        for rarity, exchangeable in (("C", 2), ("R", 3))
+    ]
+    collection = CafeCollection(
+        cards=cards,
+        endgame_pity_active=False,
+        endgame_pity_duplicate_draws=100,
+        mastery_tiers=[],
+    )
+    view = CollectionActionsView(guild_id=1001, user_id=11, collection=collection)
+
+    for label, kind in (
+        ("全重複をXP交換", "xp"),
+        ("全重複をメダル交換", "medals"),
+    ):
+        button = next(
+            item for item in view.children if getattr(item, "label", None) == label
+        )
+        interaction = _interaction(interaction_id=9104)
+        await button.callback(interaction)
+        send_args = cast(AsyncMock, interaction.response.send_message).await_args
+        assert send_args is not None
+        confirm = send_args.kwargs["view"]
+        assert isinstance(confirm, RedemptionConfirmView)
+        assert confirm.kind == kind
+        assert confirm.quantities == {"c-card": 2, "r-card": 3}
+
+
+@pytest.mark.parametrize(
+    ("kind", "button_label", "rarity", "quantities", "reward", "endpoint"),
+    [
+        (
+            "xp",
+            "レアリティ別XP交換",
+            "C",
+            {"c-one": 2, "c-two": 1},
+            17,
+            "/redemptions/xp",
+        ),
+        (
+            "medals",
+            "レアリティ別メダル交換",
+            "R",
+            {"r-one": 3},
+            15,
+            "/redemptions/medals",
+        ),
+    ],
+)
+async def test_rarity_bulk_exchange_only_redeems_selected_unprotected_duplicates(
+    kind: str,
+    button_label: str,
+    rarity: str,
+    quantities: dict[str, int],
+    reward: int,
+    endpoint: str,
+) -> None:
+    def card(
+        key: str,
+        card_rarity: str,
+        *,
+        count: int,
+        exchangeable: int,
+        protected: bool = False,
+        xp: int = 5,
+        medals: int = 1,
+    ) -> CafeCollectionCard:
+        return CafeCollectionCard(
+            key=key,
+            name=key,
+            rarity=card_rarity,
+            description="説明",
+            image_filename=f"{key}.jpg",
+            count=count,
+            redeemable_count=max(0, count - 1),
+            lifetime_count=count,
+            is_protected=protected,
+            exchangeable_count=exchangeable,
+            exchange_xp=xp,
+            exchange_medals=medals,
+        )
+
+    collection = CafeCollection(
+        cards=[
+            card("c-one", "C", count=3, exchangeable=2),
+            card("c-protected", "C", count=3, exchangeable=0, protected=True),
+            card("c-two", "C", count=2, exchangeable=1, xp=7, medals=2),
+            card("r-one", "R", count=4, exchangeable=3, xp=20, medals=5),
+            card("r-single", "R", count=1, exchangeable=0),
+        ],
+        endgame_pity_active=False,
+        endgame_pity_duplicate_draws=100,
+        mastery_tiers=[],
+    )
+    actions = CollectionActionsView(guild_id=1001, user_id=11, collection=collection)
+    button = next(
+        item
+        for item in actions.children
+        if getattr(item, "label", None) == button_label
+    )
+    selection_interaction = _interaction(interaction_id=9101)
+    await button.callback(selection_interaction)
+    selection_args = cast(
+        AsyncMock, selection_interaction.response.send_message
+    ).await_args
+    assert selection_args is not None
+    selection = selection_args.kwargs["view"]
+    assert isinstance(selection, RarityBulkExchangeView)
+    rarity_select = cast(Any, selection.children[0])
+    assert {option.value for option in rarity_select.options} == {"C", "R"}
+    assert len(rarity_select.options) <= 25
+    rarity_select._values = [rarity]
+
+    confirm_interaction = _interaction(interaction_id=9102)
+    await rarity_select.callback(confirm_interaction)
+    confirm_args = cast(AsyncMock, confirm_interaction.response.send_message).await_args
+    assert confirm_args is not None
+    content = confirm_args.args[0]
+    confirm = confirm_args.kwargs["view"]
+    assert isinstance(confirm, RedemptionConfirmView)
+    assert confirm.kind == kind
+    assert confirm.quantities == quantities
+    confirm_label = confirm.confirm.label
+    assert confirm_label is not None
+    assert ("XP" if kind == "xp" else "カフェメダル") in confirm_label
+    assert f"{reward:,}" in content
+    assert "最初の1枚と保護カードは残ります" in content
+
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/authorize"):
+            return httpx.Response(200, json={})
+        captured["path"] = request.url.path
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "status": "redeemed",
+                "reward_xp": reward if kind == "xp" else 0,
+                "reward_medals": reward if kind == "medals" else 0,
+                "medal_balance": reward,
+                "items": [],
+            },
+        )
+
+    api = CafeApiClient(
+        "https://level.example.com",
+        "cafe-secret",
+        transport=httpx.MockTransport(handler),
+    )
+    transaction_interaction = _interaction(interaction_id=9103)
+    cast(Any, transaction_interaction).client = SimpleNamespace(user=None, cafe_api=api)
+    try:
+        await confirm.confirm.callback(transaction_interaction)
+    finally:
+        await api.close()
+
+    assert captured["path"].endswith(endpoint)
+    assert captured["body"]["quantities"] == quantities
+    assert captured["body"]["event_id"] == confirm.event_id
+    assert captured["body"]["actor"]["guild_id"] == "1001"
 
 
 async def test_large_collection_keeps_discord_select_options_within_limit() -> None:
