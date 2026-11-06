@@ -486,6 +486,17 @@ async def test_full_collection_shows_actions_before_rendering_shelf_pages(
     assert rendered_cards == [[selected_card], [other_card]]
     cast(AsyncMock, next_interaction.edit_original_response).assert_awaited_once()
 
+    menu_interaction = _interaction(interaction_id=5009)
+    cast(Any, menu_interaction.client).cafe_api = api
+    await shelf.actions.callback(menu_interaction)
+
+    assert api.collection.await_count == 2
+    menu_send = cast(AsyncMock, menu_interaction.followup.send)
+    assert menu_send.await_count == 1
+    menu_args = menu_send.await_args
+    assert menu_args is not None
+    assert isinstance(menu_args.kwargs["view"], CollectionActionsView)
+
 
 async def test_full_collection_keeps_large_shelf_embeds_within_discord_limits(
     monkeypatch: pytest.MonkeyPatch,
@@ -1001,11 +1012,11 @@ def test_collection_summary_matches_old_bot_details_and_pity_conditions() -> Non
         "☕ カード熟練度",
         "🏆 N棚の主",
         "終盤のNEW保証",
-        "XP交換",
+        "重複カードの交換",
     ]
 
 
-async def test_collection_actions_keep_existing_and_add_rarity_exchange() -> None:
+async def test_collection_actions_group_exchange_by_reward_and_scope() -> None:
     card = CafeCollectionCard(
         key="spent-tea",
         name="出がらしティー",
@@ -1047,6 +1058,13 @@ async def test_collection_actions_keep_existing_and_add_rarity_exchange() -> Non
         user_id=11,
         collection=collection,
     )
+    summary = _collection_summary(collection, display_name="カフェ客")
+    guidance = next(
+        field.value for field in summary.fields if field.name == "重複カードの交換"
+    )
+    assert isinstance(guidance, str)
+    assert "レアリティ別" in guidance
+    assert "メダル" in guidance
 
     labels = {getattr(item, "label", None) for item in view.children}
     assert labels == {
@@ -1068,25 +1086,25 @@ async def test_collection_actions_keep_existing_and_add_rarity_exchange() -> Non
     ]
     assert [button.label for button in buttons] == [
         "重複を選んでXP交換",
-        "全重複をXP交換",
-        "全重複をメダル交換",
-        "メダル・棚テーマ",
-        "カード保護（名前検索）",
-        "セットメニュー",
         "レアリティ別XP交換",
+        "全重複をXP交換",
         "レアリティ別メダル交換",
+        "全重複をメダル交換",
+        "カード保護（名前検索）",
+        "メダル・棚テーマ",
+        "セットメニュー",
     ]
     assert [button.style for button in buttons] == [
+        discord.ButtonStyle.primary,
         discord.ButtonStyle.primary,
         discord.ButtonStyle.success,
         discord.ButtonStyle.secondary,
         discord.ButtonStyle.secondary,
         discord.ButtonStyle.secondary,
         discord.ButtonStyle.secondary,
-        discord.ButtonStyle.primary,
         discord.ButtonStyle.secondary,
     ]
-    assert [button.row for button in buttons] == [1, 1, 2, 2, 3, 3, 4, 4]
+    assert [button.row for button in buttons] == [1, 1, 1, 2, 2, 3, 4, 4]
     components = view.to_components()
     assert len(components) == 5
     assert all(1 <= len(row["components"]) <= 5 for row in components)
@@ -1142,6 +1160,8 @@ async def test_existing_all_duplicate_exchange_still_covers_every_rarity() -> No
         mastery_tiers=[],
     )
     view = CollectionActionsView(guild_id=1001, user_id=11, collection=collection)
+    api = Mock(spec=CafeApiClient)
+    api.collection = AsyncMock(return_value=collection)
 
     for label, kind in (
         ("全重複をXP交換", "xp"),
@@ -1151,13 +1171,84 @@ async def test_existing_all_duplicate_exchange_still_covers_every_rarity() -> No
             item for item in view.children if getattr(item, "label", None) == label
         )
         interaction = _interaction(interaction_id=9104)
+        cast(Any, interaction.client).cafe_api = api
         await button.callback(interaction)
-        send_args = cast(AsyncMock, interaction.response.send_message).await_args
+        send_args = cast(AsyncMock, interaction.followup.send).await_args
         assert send_args is not None
         confirm = send_args.kwargs["view"]
         assert isinstance(confirm, RedemptionConfirmView)
         assert confirm.kind == kind
         assert confirm.quantities == {"c-card": 2, "r-card": 3}
+        assert "N: 1種・2枚" in send_args.args[0]
+        assert "R: 1種・3枚" in send_args.args[0]
+
+
+async def test_old_rarity_button_uses_latest_exchangeable_counts() -> None:
+    c_card = CafeCollectionCard(
+        key="c-card",
+        name="Nカード",
+        rarity="C",
+        description="説明",
+        image_filename="c-card.jpg",
+        count=2,
+        redeemable_count=1,
+        lifetime_count=2,
+        is_protected=False,
+        exchangeable_count=1,
+        exchange_xp=5,
+        exchange_medals=1,
+    )
+    stale = CafeCollection(
+        cards=[c_card],
+        endgame_pity_active=False,
+        endgame_pity_duplicate_draws=100,
+        mastery_tiers=[],
+    )
+    current = stale.model_copy(
+        update={
+            "cards": [
+                c_card.model_copy(
+                    update={"count": 1, "redeemable_count": 0, "exchangeable_count": 0}
+                ),
+                c_card.model_copy(
+                    update={
+                        "key": "r-card",
+                        "name": "Rカード",
+                        "rarity": "R",
+                        "count": 3,
+                        "redeemable_count": 2,
+                        "exchangeable_count": 2,
+                    }
+                ),
+            ]
+        }
+    )
+    actions = CollectionActionsView(guild_id=1001, user_id=11, collection=stale)
+    button = next(
+        item
+        for item in actions.children
+        if getattr(item, "label", None) == "レアリティ別XP交換"
+    )
+    api = Mock(spec=CafeApiClient)
+    api.collection = AsyncMock(return_value=current)
+    interaction = _interaction(interaction_id=9108)
+    cast(Any, interaction.client).cafe_api = api
+
+    await button.callback(interaction)
+
+    api.collection.assert_awaited_once()
+    selection_args = cast(AsyncMock, interaction.followup.send).await_args
+    assert selection_args is not None
+    selection = selection_args.kwargs["view"]
+    assert isinstance(selection, RarityBulkExchangeView)
+    rarity_select = cast(Any, selection.children[0])
+    assert [option.value for option in rarity_select.options] == ["R"]
+    rarity_select._values = ["R"]
+    confirm_interaction = _interaction(interaction_id=9109)
+    await rarity_select.callback(confirm_interaction)
+    confirm_args = cast(AsyncMock, confirm_interaction.response.edit_message).await_args
+    assert confirm_args is not None
+    assert confirm_args.kwargs["view"].quantities == {"r-card": 2}
 
 
 @pytest.mark.parametrize(
@@ -1227,16 +1318,17 @@ async def test_rarity_bulk_exchange_only_redeems_selected_unprotected_duplicates
         mastery_tiers=[],
     )
     actions = CollectionActionsView(guild_id=1001, user_id=11, collection=collection)
+    selection_api = Mock(spec=CafeApiClient)
+    selection_api.collection = AsyncMock(return_value=collection)
     button = next(
         item
         for item in actions.children
         if getattr(item, "label", None) == button_label
     )
     selection_interaction = _interaction(interaction_id=9101)
+    cast(Any, selection_interaction.client).cafe_api = selection_api
     await button.callback(selection_interaction)
-    selection_args = cast(
-        AsyncMock, selection_interaction.response.send_message
-    ).await_args
+    selection_args = cast(AsyncMock, selection_interaction.followup.send).await_args
     assert selection_args is not None
     selection = selection_args.kwargs["view"]
     assert isinstance(selection, RarityBulkExchangeView)
@@ -1247,9 +1339,9 @@ async def test_rarity_bulk_exchange_only_redeems_selected_unprotected_duplicates
 
     confirm_interaction = _interaction(interaction_id=9102)
     await rarity_select.callback(confirm_interaction)
-    confirm_args = cast(AsyncMock, confirm_interaction.response.send_message).await_args
+    confirm_args = cast(AsyncMock, confirm_interaction.response.edit_message).await_args
     assert confirm_args is not None
-    content = confirm_args.args[0]
+    content = confirm_args.kwargs["content"]
     confirm = confirm_args.kwargs["view"]
     assert isinstance(confirm, RedemptionConfirmView)
     assert confirm.kind == kind
@@ -1259,12 +1351,37 @@ async def test_rarity_bulk_exchange_only_redeems_selected_unprotected_duplicates
     assert ("XP" if kind == "xp" else "カフェメダル") in confirm_label
     assert f"{reward:,}" in content
     assert "最初の1枚と保護カードは残ります" in content
+    assert "対象カード:" in content
+    assert ("c-one ×2" if kind == "xp" else "r-one ×3") in content
+    assert "c-protected" not in content
+
+    updated_cards = [
+        card.model_copy(
+            update={
+                "count": card.count - quantities.get(card.key, 0),
+                "redeemable_count": card.redeemable_count - quantities.get(card.key, 0),
+                "exchangeable_count": card.exchangeable_count
+                - quantities.get(card.key, 0),
+            }
+        )
+        for card in collection.cards
+    ]
+    updated_collection = collection.model_copy(
+        update={
+            "cards": updated_cards,
+            "medal_balance": reward if kind == "medals" else collection.medal_balance,
+        }
+    )
 
     captured: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/authorize"):
             return httpx.Response(200, json={})
+        if request.url.path.endswith("/collection"):
+            captured["collection_reads"] = captured.get("collection_reads", 0) + 1
+            captured["collection_actor"] = json.loads(request.content)["actor"]
+            return httpx.Response(200, json=updated_collection.model_dump())
         captured["path"] = request.url.path
         captured["body"] = json.loads(request.content)
         return httpx.Response(
@@ -1285,6 +1402,7 @@ async def test_rarity_bulk_exchange_only_redeems_selected_unprotected_duplicates
     )
     transaction_interaction = _interaction(interaction_id=9103)
     cast(Any, transaction_interaction).client = SimpleNamespace(user=None, cafe_api=api)
+    cast(Any, transaction_interaction).edit_original_response = AsyncMock()
     try:
         await confirm.confirm.callback(transaction_interaction)
     finally:
@@ -1294,6 +1412,205 @@ async def test_rarity_bulk_exchange_only_redeems_selected_unprotected_duplicates
     assert captured["body"]["quantities"] == quantities
     assert captured["body"]["event_id"] == confirm.event_id
     assert captured["body"]["actor"]["guild_id"] == "1001"
+    assert captured["collection_reads"] == 1
+    assert captured["collection_actor"] == captured["body"]["actor"]
+    edit_args = cast(
+        AsyncMock, transaction_interaction.edit_original_response
+    ).await_args
+    assert edit_args is not None
+    assert "最新の棚" in edit_args.kwargs["content"]
+    assert isinstance(edit_args.kwargs["view"], CollectionActionsView)
+    refreshed_view = edit_args.kwargs["view"]
+    refreshed = next(
+        cast(Any, item).collection
+        for item in refreshed_view.children
+        if getattr(item, "label", None) == "メダル・棚テーマ"
+    )
+    assert {card.key: card.count for card in refreshed.cards} == {
+        card.key: card.count for card in updated_cards
+    }
+    assert (
+        edit_args.kwargs["embed"]
+        .fields[0]
+        .value.startswith(f"{updated_collection.medal_balance:,}枚")
+    )
+
+
+async def test_rarity_exchange_preview_is_bounded_for_many_cards() -> None:
+    cards = [
+        CafeCollectionCard(
+            key=f"card-{index}",
+            name=f"とても長いカフェカードの名前{index:03d}" * 3,
+            rarity="C",
+            description="説明",
+            image_filename=f"card-{index}.jpg",
+            count=2,
+            redeemable_count=1,
+            lifetime_count=2,
+            is_protected=False,
+            exchangeable_count=1,
+            exchange_xp=5,
+            exchange_medals=1,
+        )
+        for index in range(1001)
+    ]
+    huge_count = 10**120
+    cards[0] = cards[0].model_copy(
+        update={
+            "count": huge_count + 1,
+            "redeemable_count": huge_count,
+            "exchangeable_count": huge_count,
+            "exchange_xp": huge_count,
+        }
+    )
+    view = RarityBulkExchangeView(guild_id=1001, user_id=11, cards=cards, kind="xp")
+    selection = cast(Any, view.children[0])
+    assert len(selection.options[0].label) <= 100
+    assert len(selection.options[0].description) <= 100
+    selection._values = ["C"]
+    interaction = _interaction(interaction_id=9105)
+
+    await selection.callback(interaction)
+
+    edit_args = cast(AsyncMock, interaction.response.edit_message).await_args
+    assert edit_args is not None
+    content = edit_args.kwargs["content"]
+    assert len(content) < 2000
+    assert "…ほか 993種" in content
+    assert "名前000" in content
+    assert "名前008" not in content
+
+
+async def test_exchange_success_survives_shelf_refresh_failure() -> None:
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path.endswith("/authorize"):
+            return httpx.Response(200, json={})
+        if request.url.path.endswith("/collection"):
+            return httpx.Response(503, json={"detail": "temporarily unavailable"})
+        return httpx.Response(
+            200,
+            json={
+                "status": "redeemed",
+                "reward_xp": 30,
+                "reward_medals": 0,
+                "items": [],
+            },
+        )
+
+    api = CafeApiClient(
+        "https://level.example.com",
+        "cafe-secret",
+        transport=httpx.MockTransport(handler),
+    )
+    interaction = _interaction(interaction_id=9106)
+    cast(Any, interaction).client = SimpleNamespace(user=None, cafe_api=api)
+    cast(Any, interaction).edit_original_response = AsyncMock()
+    confirm = RedemptionConfirmView(
+        guild_id=1001,
+        user_id=11,
+        quantities={"spent-tea": 1},
+        kind="xp",
+        confirm_label="このカードを交換する",
+        unavailable_message="所持数が変わりました。",
+    )
+    try:
+        await confirm.confirm.callback(interaction)
+    finally:
+        await api.close()
+
+    assert paths[-2:] == [
+        "/api/v1/integrations/cafe-collection/redemptions/xp",
+        "/api/v1/integrations/cafe-collection/collection",
+    ]
+    edit_args = cast(AsyncMock, interaction.edit_original_response).await_args
+    assert edit_args is not None
+    assert "30 XP を受け取りました" in edit_args.kwargs["content"]
+    assert "最新の棚を表示できませんでした" in edit_args.kwargs["content"]
+
+
+async def test_exchange_api_error_replaces_progress_with_uncertain_result() -> None:
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path.endswith("/authorize"):
+            return httpx.Response(200, json={})
+        return httpx.Response(503, json={"detail": "temporarily unavailable"})
+
+    api = CafeApiClient(
+        "https://level.example.com",
+        "cafe-secret",
+        transport=httpx.MockTransport(handler),
+    )
+    interaction = _interaction(interaction_id=9107)
+    cast(Any, interaction).client = SimpleNamespace(user=None, cafe_api=api)
+    cast(Any, interaction).edit_original_response = AsyncMock()
+    confirm = RedemptionConfirmView(
+        guild_id=1001,
+        user_id=11,
+        quantities={"spent-tea": 1},
+        kind="xp",
+        confirm_label="このカードを交換する",
+        unavailable_message="所持数が変わりました。",
+    )
+    try:
+        await confirm.confirm.callback(interaction)
+    finally:
+        await api.close()
+
+    assert paths[-1].endswith("/redemptions/xp")
+    edit_args = cast(AsyncMock, interaction.edit_original_response).await_args
+    assert edit_args is not None
+    assert "交換結果を確認できませんでした" in edit_args.kwargs["content"]
+    assert "交換しています" not in edit_args.kwargs["content"]
+    cast(AsyncMock, interaction.followup.send).assert_not_awaited()
+
+
+async def test_exchange_unavailable_replaces_progress_without_shelf_refresh() -> None:
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path.endswith("/authorize"):
+            return httpx.Response(200, json={})
+        return httpx.Response(
+            200,
+            json={
+                "status": "unavailable",
+                "reward_xp": 0,
+                "reward_medals": 0,
+                "items": [],
+            },
+        )
+
+    api = CafeApiClient(
+        "https://level.example.com",
+        "cafe-secret",
+        transport=httpx.MockTransport(handler),
+    )
+    interaction = _interaction(interaction_id=9110)
+    cast(Any, interaction).client = SimpleNamespace(user=None, cafe_api=api)
+    cast(Any, interaction).edit_original_response = AsyncMock()
+    confirm = RedemptionConfirmView(
+        guild_id=1001,
+        user_id=11,
+        quantities={"spent-tea": 1},
+        kind="xp",
+        confirm_label="このカードを交換する",
+        unavailable_message="所持数が変わりました。",
+    )
+    try:
+        await confirm.confirm.callback(interaction)
+    finally:
+        await api.close()
+
+    assert paths[-1].endswith("/redemptions/xp")
+    cast(AsyncMock, interaction.edit_original_response).assert_awaited_once_with(
+        content="所持数が変わりました。"
+    )
 
 
 async def test_large_collection_keeps_discord_select_options_within_limit() -> None:
@@ -1321,6 +1638,8 @@ async def test_large_collection_keeps_discord_select_options_within_limit() -> N
         mastery_tiers=[],
     )
     view = CollectionActionsView(guild_id=1001, user_id=11, collection=collection)
+    api = Mock(spec=CafeApiClient)
+    api.collection = AsyncMock(return_value=collection)
 
     options = [
         component["options"]
@@ -1337,8 +1656,9 @@ async def test_large_collection_keeps_discord_select_options_within_limit() -> N
         if getattr(item, "label", None) == "重複を選んでXP交換"
     )
     interaction = _interaction(interaction_id=5010)
+    cast(Any, interaction.client).cafe_api = api
     await redeem.callback(interaction)
-    send_args = cast(AsyncMock, interaction.response.send_message).await_args
+    send_args = cast(AsyncMock, interaction.followup.send).await_args
     assert send_args is not None
     rarity_view = send_args.kwargs["view"]
     assert isinstance(rarity_view, RarityPageView)
@@ -1450,8 +1770,18 @@ async def test_custom_quantity_accepts_more_than_four_digits() -> None:
 
 async def test_xp_exchange_uses_confirmation_interaction_as_idempotency_key() -> None:
     captured: dict[str, Any] = {}
+    updated_collection = CafeCollection(
+        cards=[],
+        endgame_pity_active=False,
+        endgame_pity_duplicate_draws=100,
+        mastery_tiers=[],
+    )
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/authorize"):
+            return httpx.Response(200, json={})
+        if request.url.path.endswith("/collection"):
+            return httpx.Response(200, json=updated_collection.model_dump())
         captured.update(cast(dict[str, Any], json.loads(request.content)))
         return httpx.Response(
             200,
@@ -1471,6 +1801,7 @@ async def test_xp_exchange_uses_confirmation_interaction_as_idempotency_key() ->
     interaction = _interaction(interaction_id=8002)
     cast(Any, interaction).client = SimpleNamespace(user=None, cafe_api=api)
     cast(Any, interaction.response).edit_message = AsyncMock()
+    cast(Any, interaction).edit_original_response = AsyncMock()
     view = RedemptionConfirmView(
         guild_id=1001,
         user_id=11,
@@ -1488,9 +1819,13 @@ async def test_xp_exchange_uses_confirmation_interaction_as_idempotency_key() ->
     assert captured["event_id"] == view.event_id
     assert captured["quantities"] == {"spent-tea": 1}
     assert captured["actor"]["guild_id"] == "1001"
+    edit_args = cast(AsyncMock, interaction.edit_original_response).await_args
+    assert edit_args is not None
+    assert "30 XP を受け取りました" in edit_args.kwargs["content"]
+    assert isinstance(edit_args.kwargs["view"], CollectionActionsView)
 
 
-async def test_medal_confirmation_has_no_extra_cancel_button() -> None:
+async def test_medal_confirmation_can_be_cancelled_before_exchange() -> None:
     xp_view = RedemptionConfirmView(
         guild_id=1001,
         user_id=11,
@@ -1513,5 +1848,11 @@ async def test_medal_confirmation_has_no_extra_cancel_button() -> None:
         "キャンセル",
     ]
     assert [getattr(child, "label", None) for child in medal_view.children] == [
-        "メダルへ交換する"
+        "メダルへ交換する",
+        "キャンセル",
     ]
+    interaction = _interaction(interaction_id=8003)
+    await medal_view.cancel.callback(interaction)
+    cast(AsyncMock, interaction.response.edit_message).assert_awaited_once_with(
+        content="交換をキャンセルしました。", view=None
+    )
